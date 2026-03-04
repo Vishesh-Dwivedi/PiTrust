@@ -23,11 +23,15 @@ export function Vouch() {
     const { state: payState, pay, reset: resetPay } = usePiPayment();
     const [search, setSearch] = useState('');
     const [vouches, setVouches] = useState<Voucher[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
 
     // Fetch Vouches
     useEffect(() => {
         if (!user) return;
         const fetchVouches = async () => {
+            setLoading(true);
+            setFetchError(null);
             try {
                 const res = await fetch(`/api/vouch/${user.wallet_address || user.uid}`, {
                     headers: { Authorization: `Bearer ${accessToken}` }
@@ -42,9 +46,14 @@ export function Vouch() {
                         stakedAt: v.staked_at,
                         active: v.status === 'active'
                     })));
+                } else {
+                    setVouches([]);
                 }
             } catch (err) {
                 console.error('Failed to fetch vouches', err);
+                setFetchError('Could not load vouches. The server may be unavailable.');
+            } finally {
+                setLoading(false);
             }
         };
         fetchVouches();
@@ -78,6 +87,21 @@ export function Vouch() {
 
     return (
         <div className="vouch-page stagger">
+
+            {/* Loading state */}
+            {loading && (
+                <div className="frost-card animate-fade-up" style={{ textAlign: 'center', padding: '48px 24px' }}>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Loading vouches...</p>
+                </div>
+            )}
+
+            {/* Error state */}
+            {fetchError && (
+                <div className="frost-card animate-fade-up" style={{ textAlign: 'center', padding: '32px 24px' }}>
+                    <p style={{ color: 'var(--danger)', marginBottom: '8px' }}>⚠️ {fetchError}</p>
+                    <p style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>Vouches will load when the backend is connected.</p>
+                </div>
+            )}
 
             {/* Header stats */}
             <div className="vouch-header animate-fade-up">

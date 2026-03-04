@@ -13,17 +13,23 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600&display=swap"
     rel="stylesheet" />
-  <!-- Pi SDK CDN (sandbox/testnet) -->
-  <script src="https://sdk.minepi.com/pi-sdk.js"></script>
+  <!-- Pi SDK CDN — init ONLY after script fully loads -->
   <script>
-    console.log('[PiTrust] Executing synchronous Pi.init()');
-    try {
-      Pi.init({ version: "2.0", sandbox: true });
-      console.log('[PiTrust] Pi.init() completed successfully');
-    } catch (e) {
-      console.error('[PiTrust] Pi SDK Init Error:', e);
+    window.__PI_SDK_READY__ = false;
+    function __piSdkLoaded() {
+      console.log('[PiTrust] Pi SDK script loaded');
+      try {
+        Pi.init({ version: "2.0", sandbox: true });
+        window.__PI_SDK_READY__ = true;
+        console.log('[PiTrust] Pi.init() completed successfully');
+        // Dispatch event so React can detect SDK readiness
+        window.dispatchEvent(new Event('pi-sdk-ready'));
+      } catch (e) {
+        console.error('[PiTrust] Pi SDK Init Error:', e);
+      }
     }
   </script>
+  <script src="https://sdk.minepi.com/pi-sdk.js" onload="__piSdkLoaded()"></script>
 </head>
 
 <body>

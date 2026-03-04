@@ -1,6 +1,8 @@
 /**
  * PiAuthContext — wraps window.Pi SDK authentication.
- * In dev mode (no Pi Browser), provides a mock user immediately.
+ * Waits for the Pi SDK to load (via the 'pi-sdk-ready' event dispatched from index.html)
+ * before attempting authentication. Falls back to dev mode ONLY when explicitly
+ * running in local dev (VITE_DEV_MODE=true) or after SDK load timeout.
  */
 import {
     createContext,
@@ -19,11 +21,16 @@ const DEV_USER: PiUser = {
     wallet_address: 'GDEV1234MOCK5678ABCD',
 };
 
+const EXPLICIT_DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true';
+const SDK_TIMEOUT_MS = 5000; // Wait up to 5s for Pi SDK to load
+
 interface PiAuthState {
     user: PiUser | null;
     accessToken: string | null;
     loading: boolean;
     error: string | null;
+    sdkReady: boolean;
+    isDevMode: boolean;
     authenticate: () => Promise<void>;
     logout: () => void;
 }
@@ -31,27 +38,71 @@ interface PiAuthState {
 const PiAuthContext = createContext<PiAuthState | null>(null);
 
 export function PiAuthProvider({ children }: { children: ReactNode }) {
-    // Determine dynamically at render/mount time
-    const initialDevMode = typeof window !== 'undefined' && !window.Pi;
-
-    // In dev mode, pre-populate user so pages render immediately
-    const [user, setUser] = useState<PiUser | null>(initialDevMode ? DEV_USER : null);
-    const [accessToken, setAccessToken] = useState<string | null>(initialDevMode ? 'mock_token_dev' : null);
-    // Loading is false in dev mode (user already set above), true in production
-    const [loading, setLoading] = useState(!initialDevMode);
+    const [user, setUser] = useState<PiUser | null>(null);
+    const [accessToken, setAccessToken] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [sdkReady, setSdkReady] = useState(false);
+    const [isDevMode, setIsDevMode] = useState(false);
 
-    const authenticate = useCallback(async () => {
-        const isDev = !window.Pi;
-        if (isDev) {
-            // Already set in initial state — just ensure consistency
+    // ── Wait for the Pi SDK to become available ──────────────────────────────
+    useEffect(() => {
+        // If SDK is already loaded (script loaded before React mounted)
+        if (window.Pi && (window as any).__PI_SDK_READY__) {
+            console.log('[PiAuth] SDK already available');
+            setSdkReady(true);
+            return;
+        }
+
+        // If explicitly in dev mode, skip waiting
+        if (EXPLICIT_DEV_MODE) {
+            console.log('[PiAuth] VITE_DEV_MODE=true — entering dev mode');
+            setIsDevMode(true);
             setUser(DEV_USER);
             setAccessToken('mock_token_dev');
             setLoading(false);
             return;
         }
 
-        const sdk = window.Pi!;
+        // Listen for the custom event from index.html
+        const handleSdkReady = () => {
+            console.log('[PiAuth] Received pi-sdk-ready event');
+            setSdkReady(true);
+        };
+        window.addEventListener('pi-sdk-ready', handleSdkReady);
+
+        // Timeout fallback — if SDK doesn't load after 5s, enter dev mode
+        const timeout = setTimeout(() => {
+            if (!window.Pi) {
+                console.warn('[PiAuth] Pi SDK did not load within 5s — falling back to dev mode');
+                setIsDevMode(true);
+                setUser(DEV_USER);
+                setAccessToken('mock_token_dev');
+                setLoading(false);
+            }
+        }, SDK_TIMEOUT_MS);
+
+        return () => {
+            window.removeEventListener('pi-sdk-ready', handleSdkReady);
+            clearTimeout(timeout);
+        };
+    }, []);
+
+    // ── Authenticate once SDK is ready ───────────────────────────────────────
+    const authenticate = useCallback(async () => {
+        if (!window.Pi) {
+            if (EXPLICIT_DEV_MODE) {
+                setUser(DEV_USER);
+                setAccessToken('mock_token_dev');
+                setLoading(false);
+                return;
+            }
+            setError('Pi Browser is required. Please open this app inside the Pi Browser.');
+            setLoading(false);
+            return;
+        }
+
+        const sdk = window.Pi;
         setLoading(true);
         setError(null);
         try {
@@ -59,9 +110,11 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
                 ['username', 'payments', 'wallet_address'],
                 handleIncompletePayment
             );
+            console.log('[PiAuth] Authentication successful:', result.user.username);
             setUser(result.user);
             setAccessToken(result.accessToken);
         } catch (err) {
+            console.error('[PiAuth] Authentication failed:', err);
             setError(err instanceof Error ? err.message : 'Authentication failed');
         } finally {
             setLoading(false);
@@ -73,16 +126,15 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
         setAccessToken(null);
     }, []);
 
-    // Auto-auth on mount
+    // Auto-authenticate when SDK becomes ready
     useEffect(() => {
-        const isDev = !window.Pi;
-        if (!isDev) {
+        if (sdkReady && !isDevMode) {
             authenticate();
         }
-    }, [authenticate]);
+    }, [sdkReady, isDevMode, authenticate]);
 
     return (
-        <PiAuthContext.Provider value={{ user, accessToken, loading, error, authenticate, logout }}>
+        <PiAuthContext.Provider value={{ user, accessToken, loading, error, sdkReady, isDevMode, authenticate, logout }}>
             {children}
         </PiAuthContext.Provider>
     );

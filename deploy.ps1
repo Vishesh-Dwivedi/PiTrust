@@ -1,9 +1,16 @@
 
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
 
+# ── SECURITY: Read secrets from environment, never hardcode ──
+if (-Not $env:PIT_ADMIN_SEED) {
+    Write-Host "ERROR: PIT_ADMIN_SEED environment variable is not set." -ForegroundColor Red
+    Write-Host "Set it with: `$env:PIT_ADMIN_SEED = 'S...'`" -ForegroundColor Yellow
+    exit 1
+}
+
 Write-Host "Configuring Stellar CLI for testnet..."
 stellar network add testnet --rpc-url https://soroban-testnet.stellar.org --network-passphrase "Test SDF Network ; September 2015" | Out-Null
-$env:STELLAR_SECRET_KEY = "SBEXTVPRSBVVBECDMCDHVK5PDIV43W6ZF6CUVUHNPHWORBSJEVPMAEAT"
+$env:STELLAR_SECRET_KEY = $env:PIT_ADMIN_SEED
 stellar keys add deployer --secret-key 2>$null | Out-Null
 
 Write-Host "Building Smart Contracts..."
@@ -30,7 +37,7 @@ STELLAR_TESTNET_RPC=https://soroban-testnet.stellar.org
 STELLAR_TESTNET_HORIZON=https://horizon-testnet.stellar.org
 PI_API_BASE=https://api.minepi.com
 PI_API_KEY=YOUR_PI_API_KEY_HERE
-PIT_ADMIN_SEED=SBEXTVPRSBVVBECDMCDHVK5PDIV43W6ZF6CUVUHNPHWORBSJEVPMAEAT
+PIT_ADMIN_SEED=YOUR_ADMIN_SEED_HERE
 DATABASE_URL=postgresql://pitrust:pitrust_dev@localhost:5432/pitrust_testnet
 REDIS_URL=redis://localhost:6379
 SCORE_ENGINE_URL=http://localhost:8001

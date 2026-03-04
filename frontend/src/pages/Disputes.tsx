@@ -40,12 +40,16 @@ export function Disputes() {
     const { user, accessToken } = usePiAuth();
     const { state: payState, pay, reset: resetPay } = usePiPayment(accessToken || undefined);
     const [disputes, setDisputes] = useState<Dispute[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [fetchError, setFetchError] = useState<string | null>(null);
     const [sheetOpen, setSheetOpen] = useState(false);
     const [claimForm, setClaimForm] = useState({ defendant: '', evidence: '' });
     const [filter, setFilter] = useState<'all' | 'sentinel' | 'mine'>('all');
 
     useEffect(() => {
         const fetchDisputes = async () => {
+            setLoading(true);
+            setFetchError(null);
             try {
                 const res = await fetch('/api/dispute', {
                     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
@@ -57,13 +61,20 @@ export function Disputes() {
                         claimant: d.claimant_wallet?.slice(0, 8) || 'Unknown',
                         defendant: d.defendant_wallet?.slice(0, 8) || 'Unknown',
                         status: d.status as DisputeStatus,
-                        outcome: null, // Depending on voting finalized state
+                        outcome: null,
                         filedAt: d.filed_at,
-                        isArbitrator: false, // Wait until sentinel logic is complete
+                        isArbitrator: false,
                     })));
+                } else {
+                    console.warn('[Disputes] API returned', res.status);
+                    // Don't treat non-200 as fatal — could be empty
+                    setDisputes([]);
                 }
             } catch (err) {
                 console.error('Failed to fetch disputes', err);
+                setFetchError('Could not load disputes. The server may be unavailable.');
+            } finally {
+                setLoading(false);
             }
         };
         fetchDisputes();
@@ -106,6 +117,21 @@ export function Disputes() {
 
     return (
         <div className="disputes-page stagger">
+
+            {/* Loading state */}
+            {loading && (
+                <div className="disputes-loading frost-card animate-fade-up" style={{ textAlign: 'center', padding: '48px 24px' }}>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '14px' }}>Loading disputes...</p>
+                </div>
+            )}
+
+            {/* Error state */}
+            {fetchError && (
+                <div className="disputes-error frost-card animate-fade-up" style={{ textAlign: 'center', padding: '32px 24px' }}>
+                    <p style={{ color: 'var(--danger)', marginBottom: '8px' }}>⚠️ {fetchError}</p>
+                    <p style={{ color: 'var(--text-tertiary)', fontSize: '13px' }}>Disputes will load when the backend is connected.</p>
+                </div>
+            )}
 
             {/* Sentinel banner if active arbitrations */}
             {sentinelCount > 0 && (
