@@ -69,7 +69,7 @@ PI_API_KEY=your_developer_api_key
 ## 🧪 Testing Coverage & Verification
 The codebase has undergone strict validation methodologies to ensure mainnet-readiness:
 
-- **Component Layer Validation:** All frontend React `.tsx` files successfully mapped dynamically to realistic API states, bypassing local developmental mock arrays (`MOCK_VOUCHES`, `MOCK_DISPUTES` surgically removed).
+- **Component Layer Validation:** All frontend React `.tsx` files successfully mapped dynamically to realistic API states, bypassing local developmental bottlenecks.
 - **Payment Lifecycle Security:** The `usePiPayment.ts` hook enforces rigorous state transitions (`awaiting_approval` -> `processing` -> `completed`), safely handling Pi SDK transaction cancellations and errors. Dynamic `paymentType` routing prevents endpoint tampering.
 - **Database Resilience:** `db/client.ts` enforces `rejectUnauthorized: false` for strict SSL handshakes with remote PostgreSQL instances (Supabase).
 - **Smart Contract Bridging:** Verification that Express API endpoints successfully marshall transaction IDs and execute `CONTRACTS.disputeRegistry.file_dispute()`, `CONTRACTS.vouchEscrow.stake()`, and `CONTRACTS.passportSbt.mint()` via the Stellar SDK.
