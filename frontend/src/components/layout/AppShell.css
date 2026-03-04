@@ -1,0 +1,121 @@
+.app-shell {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* === Ambient orb layer === */
+.ambient-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    animation: glow-pulse 8s ease-in-out infinite;
+}
+
+.orb--teal {
+    width: 350px;
+    height: 350px;
+    background: radial-gradient(circle, rgba(77, 171, 245, 0.12) 0%, transparent 70%);
+    top: -60px;
+    right: -80px;
+    animation-delay: 0s;
+}
+
+.orb--purple {
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, rgba(124, 110, 245, 0.1) 0%, transparent 70%);
+    bottom: 100px;
+    left: -60px;
+    animation-delay: 3s;
+}
+
+/* === Top header === */
+.app-header {
+    position: relative;
+    z-index: var(--z-base);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: max(var(--space-4), env(safe-area-inset-top)) var(--space-5) var(--space-3);
+    border-bottom: 1px solid var(--frost-border);
+    background: var(--bg-overlay);
+    backdrop-filter: var(--blur-sm);
+    -webkit-backdrop-filter: var(--blur-sm);
+    flex-shrink: 0;
+}
+
+.app-header__logo {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.logo-icon {
+    font-size: 22px;
+    background: linear-gradient(135deg, var(--accent-primary), var(--pi-gold));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1;
+}
+
+.logo-text {
+    font-family: var(--font-display);
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    background: linear-gradient(135deg, var(--text-primary) 0%, rgba(255, 255, 255, 0.7) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.app-header__user {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.user-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: var(--radius-full);
+    background: linear-gradient(135deg, var(--accent-primary), #5a52d5);
+    color: white;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.user-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    font-family: var(--font-body);
+}
+
+/* === Main content area === */
+.app-main {
+    flex: 1;
+    position: relative;
+    z-index: var(--z-base);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: calc(72px + max(8px, env(safe-area-inset-bottom)));
+    -webkit-overflow-scrolling: touch;
+}

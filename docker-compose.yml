@@ -1,0 +1,107 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pitrust
+      POSTGRES_PASSWORD: pitrust_dev
+      POSTGRES_DB: pitrust_testnet
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backend/api/src/db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pitrust -d pitrust_testnet"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend/api
+      dockerfile: Dockerfile.api
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: testnet
+      PORT: 3001
+      DATABASE_URL: postgresql://pitrust:pitrust_dev@postgres:5432/pitrust_testnet
+      REDIS_URL: redis://redis:6379
+      STELLAR_NETWORK: testnet
+      STELLAR_TESTNET_RPC: https://soroban-testnet.stellar.org
+      STELLAR_TESTNET_HORIZON: https://horizon-testnet.stellar.org
+      PI_API_BASE: https://api.minepi.com
+      PI_API_KEY: ${PI_API_KEY}
+      PIT_ADMIN_SEED: ${PIT_ADMIN_SEED}
+      PIT_PASSPORT_CONTRACT: ${PIT_PASSPORT_CONTRACT:-}
+      PIT_VOUCH_CONTRACT: ${PIT_VOUCH_CONTRACT:-}
+      PIT_DISPUTE_CONTRACT: ${PIT_DISPUTE_CONTRACT:-}
+      PIT_SCORE_CONTRACT: ${PIT_SCORE_CONTRACT:-}
+      PIT_RECOVERY_CONTRACT: ${PIT_RECOVERY_CONTRACT:-}
+      PIT_MERCHANT_CONTRACT: ${PIT_MERCHANT_CONTRACT:-}
+      PIT_TRADE_CONTRACT: ${PIT_TRADE_CONTRACT:-}
+      PIT_SENTINEL_CONTRACT: ${PIT_SENTINEL_CONTRACT:-}
+      PIT_SOCIAL_CONTRACT: ${PIT_SOCIAL_CONTRACT:-}
+      PIT_GOVERNANCE_CONTRACT: ${PIT_GOVERNANCE_CONTRACT:-}
+      SCORE_ENGINE_URL: http://score_engine:8001
+      SCORE_ENGINE_SECRET: pitrust-internal-secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./.env.testnet:/app/.env.testnet:ro
+
+  score_engine:
+    build:
+      context: ./backend/score_engine
+      dockerfile: Dockerfile.score
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://pitrust:pitrust_dev@postgres:5432/pitrust_testnet
+      STELLAR_TESTNET_HORIZON: https://horizon-testnet.stellar.org
+      SCORE_ENGINE_PORT: 8001
+      SCORE_ENGINE_SECRET: pitrust-internal-secret
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Cron job: refresh all scores every 4 hours
+  score_cron:
+    image: curlimages/curl:latest
+    restart: unless-stopped
+    entrypoint: >
+      sh -c "while true; do
+        sleep 14400;
+        curl -s -X POST http://score_engine:8001/cron/refresh-all
+          -H 'x-internal-secret: pitrust-internal-secret'
+          -H 'Content-Type: application/json';
+        echo 'Score refresh triggered at $(date)';
+      done"
+    depends_on:
+      - score_engine
+
+volumes:
+  postgres_data:
+  redis_data:

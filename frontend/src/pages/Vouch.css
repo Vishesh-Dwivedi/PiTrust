@@ -1,0 +1,277 @@
+.vouch-page {
+    padding: var(--space-5) var(--space-4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    max-width: 600px;
+    margin: 0 auto;
+    padding-bottom: 100px;
+    /* Space for FAB */
+}
+
+/* === Header stats bar === */
+.vouch-header {
+    display: flex;
+    align-items: stretch;
+    background: var(--frost-bg);
+    border: 1px solid var(--frost-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.vouch-stat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-1);
+    padding: var(--space-4) var(--space-3);
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.vouch-divider {
+    width: 1px;
+    background: var(--frost-border);
+    margin: var(--space-3) 0;
+    flex-shrink: 0;
+}
+
+.vouch-stat__value {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.vouch-stat__label {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+    letter-spacing: 0.3px;
+}
+
+/* === Search === */
+.vouch-search {
+    border-radius: var(--radius-md) !important;
+}
+
+/* === Tab row === */
+.tab-row {
+    display: flex;
+    gap: var(--space-2);
+    background: var(--frost-bg);
+    border: 1px solid var(--frost-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-1);
+}
+
+.tab-btn {
+    flex: 1;
+    padding: var(--space-2) var(--space-3);
+    border: none;
+    border-radius: calc(var(--radius-md) - 4px);
+    background: transparent;
+    color: var(--text-secondary);
+    font-family: var(--font-display);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--duration-fast) var(--ease-swift);
+}
+
+.tab-btn.active {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-frost);
+}
+
+/* === Vouch cards === */
+.vouch-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.vouch-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-4);
+    gap: var(--space-3);
+}
+
+.vouch-card__left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex: 1;
+    min-width: 0;
+}
+
+.vouch-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    background: linear-gradient(135deg, var(--accent-primary), #5a52d5);
+    color: white;
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.vouch-info {
+    min-width: 0;
+}
+
+.vouch-username {
+    font-family: var(--font-display);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.vouch-wallet {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    font-family: 'Courier New', monospace;
+}
+
+.vouch-card__right {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: var(--space-1);
+    flex-shrink: 0;
+}
+
+.vouch-amount {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--pi-gold);
+}
+
+.vouch-action-btn {
+    font-size: 12px;
+    padding: 4px 12px;
+    border-radius: var(--radius-full);
+}
+
+/* === FAB === */
+.vouch-fab {
+    position: fixed;
+    bottom: calc(80px + max(8px, env(safe-area-inset-bottom)));
+    right: var(--space-5);
+    z-index: var(--z-float);
+    box-shadow: 0 8px 32px rgba(124, 110, 245, 0.5);
+    padding: var(--space-3) var(--space-5);
+}
+
+/* === Vouch Sheet === */
+.vouch-sheet {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+}
+
+.stake-slider-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.stake-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.stake-label {
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.stake-amount-display {
+    font-family: var(--font-display);
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--pi-gold);
+}
+
+.range-slider {
+    width: 100%;
+    height: 6px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: var(--frost-bg);
+    border-radius: var(--radius-full);
+    outline: none;
+    cursor: pointer;
+}
+
+.range-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--pi-gold), #e5a020);
+    box-shadow: 0 2px 12px rgba(247, 183, 49, 0.5);
+    cursor: pointer;
+}
+
+.stake-limits {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.stake-info {
+    background: var(--frost-bg);
+    border: 1px solid var(--frost-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.stake-info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--space-3) var(--space-4);
+    font-size: 14px;
+    border-bottom: 1px solid var(--frost-border);
+}
+
+.stake-info-row:last-child {
+    border-bottom: none;
+}
+
+.stake-info-row span {
+    color: var(--text-secondary);
+}
+
+.stake-info-row strong {
+    font-family: var(--font-display);
+}
+
+.stake-disclaimer {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.5;
+    background: var(--danger-muted);
+    border: 1px solid rgba(240, 77, 93, 0.15);
+    border-radius: var(--radius-sm);
+    padding: var(--space-3) var(--space-4);
+}

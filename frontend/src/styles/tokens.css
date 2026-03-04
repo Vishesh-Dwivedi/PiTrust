@@ -1,0 +1,99 @@
+/* ============================================
+   PiTrust Design System — tokens.css
+   "Industrial Elegance & Frost" aesthetic
+   ============================================ */
+
+:root {
+  /* === Background Depths === */
+  --bg-void:       #040509;
+  --bg-base:       #0a0b14;
+  --bg-surface:    #0f111e;
+  --bg-elevated:   #161928;
+  --bg-overlay:    rgba(15, 17, 30, 0.94);
+
+  /* === Frost Glass === */
+  --frost-bg:      rgba(255, 255, 255, 0.04);
+  --frost-border:  rgba(255, 255, 255, 0.08);
+  --frost-hover:   rgba(255, 255, 255, 0.07);
+  --frost-active:  rgba(255, 255, 255, 0.11);
+  --blur-sm:       blur(8px);
+  --blur-md:       blur(16px);
+  --blur-lg:       blur(32px);
+
+  /* === Pi Brand === */
+  --pi-gold:       #f7b731;
+  --pi-gold-dim:   rgba(247, 183, 49, 0.18);
+  --pi-gold-glow:  rgba(247, 183, 49, 0.35);
+
+  /* === Score Tier Colors === */
+  --tier-bronze:   #cd7f32;
+  --tier-silver:   #a8b5c1;
+  --tier-gold:     #f7c948;
+  --tier-platinum: #e2f0f9;
+  --tier-sentinel: #9b7ff5;
+  --tier-sentinel-glow: rgba(155, 127, 245, 0.4);
+
+  /* === Semantic === */
+  --accent-primary:  #7c6ef5;
+  --accent-muted:    rgba(124, 110, 245, 0.2);
+  --success:         #30d88a;
+  --success-muted:   rgba(48, 216, 138, 0.15);
+  --warning:         #f7b731;
+  --warning-muted:   rgba(247, 183, 49, 0.15);
+  --danger:          #f04d5d;
+  --danger-muted:    rgba(240, 77, 93, 0.15);
+  --info:            #4dabf5;
+  --info-muted:      rgba(77, 171, 245, 0.15);
+
+  /* === Text === */
+  --text-primary:    rgba(255, 255, 255, 0.95);
+  --text-secondary:  rgba(255, 255, 255, 0.55);
+  --text-tertiary:   rgba(255, 255, 255, 0.32);
+  --text-inverse:    rgba(0, 0, 0, 0.9);
+
+  /* === Spacing Scale (4px base) === */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3:  12px;
+  --space-4:  16px;
+  --space-5:  20px;
+  --space-6:  24px;
+  --space-8:  32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* === Border Radius === */
+  --radius-sm:   8px;
+  --radius-md:   14px;
+  --radius-lg:   20px;
+  --radius-xl:   28px;
+  --radius-full: 9999px;
+
+  /* === Elevation / Shadows === */
+  --shadow-frost:  0 4px 24px rgba(0,0,0,0.4), 0 1px 0 rgba(255,255,255,0.06) inset;
+  --shadow-card:   0 8px 40px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.05) inset;
+  --shadow-glow-gold:    0 0 32px rgba(247,183,49,0.3), 0 0 8px rgba(247,183,49,0.2);
+  --shadow-glow-accent:  0 0 32px rgba(124,110,245,0.35);
+  --shadow-glow-sentinel: 0 0 48px rgba(155,127,245,0.45), 0 0 16px rgba(155,127,245,0.3);
+
+  /* === Typography === */
+  --font-display: 'Outfit', sans-serif;
+  --font-body:    'Inter', sans-serif;
+
+  /* === Z-index layers === */
+  --z-base:       1;
+  --z-float:      100;
+  --z-drawer:     200;
+  --z-modal:      300;
+  --z-overlay:    400;
+  --z-toast:      500;
+
+  /* === Transitions === */
+  --ease-swift:    cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring:   cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out:      cubic-bezier(0, 0, 0.2, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+}
