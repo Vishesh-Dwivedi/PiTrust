@@ -54,6 +54,13 @@ export function Disputes() {
                 const res = await fetch('/api/dispute', {
                     headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined
                 });
+                // Check if response is actually JSON (Vercel may return HTML)
+                const contentType = res.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    console.warn('[Disputes] API returned non-JSON (backend not available)');
+                    setDisputes([]);
+                    return;
+                }
                 if (res.ok) {
                     const data = await res.json();
                     setDisputes(data.map((d: any) => ({

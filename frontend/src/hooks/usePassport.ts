@@ -1,10 +1,15 @@
 /**
  * usePassport — fetches passport data for the authenticated user.
  *
+ * IMPORTANT: On Vercel (static SPA deployment), /api/* routes return HTML (index.html)
+ * because the backend is not deployed on Vercel. We must check Content-Type
+ * before parsing JSON to avoid "not valid JSON" errors.
+ * 
  * Flow:
- *  - While user is null (auth still resolving) → loading = true, passport = null
- *  - Once user arrives → fetch from API
- *  - Falls back to local mock ONLY when VITE_DEV_MODE=true and API is unreachable
+ *  1. Wait for user auth to resolve
+ *  2. Try to fetch from the real API
+ *  3. If API returns HTML or is unreachable → show unminted state (not mock data)
+ *  4. Only use mock data when VITE_DEV_MODE=true
  */
 import { useState, useEffect, useCallback } from 'react';
 import { usePiAuth } from '../context/PiAuthContext';
@@ -39,7 +44,7 @@ export interface RedFlag {
 const DEV_MOCK_PASSPORT: PassportData = {
     wallet_address: 'GDEV1234MOCK5678ABCD',
     pi_uid: 'dev_uid_001',
-    minted: false,
+    minted: true,
     score: 320,
     tier: 'silver',
     score_frozen: false,
@@ -49,7 +54,27 @@ const DEV_MOCK_PASSPORT: PassportData = {
     red_flags: [],
     vouches_received: 3,
     vouches_given: 2,
+    minted_at: new Date().toISOString(),
 };
+
+/**
+ * Safely parse a response as JSON. Returns null if the response
+ * is HTML or otherwise not valid JSON (common on Vercel SPA deployments
+ * where /api/* routes return index.html).
+ */
+async function safeJsonParse(res: Response): Promise<any | null> {
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+        console.warn('[usePassport] Response is not JSON (Content-Type:', contentType, ')');
+        return null;
+    }
+    try {
+        return await res.json();
+    } catch {
+        console.warn('[usePassport] Failed to parse response as JSON');
+        return null;
+    }
+}
 
 export function usePassport() {
     const { user, accessToken, isDevMode } = usePiAuth();
@@ -58,7 +83,10 @@ export function usePassport() {
     const [error, setError] = useState<string | null>(null);
 
     const fetchPassport = useCallback(async () => {
-        if (!user) return;
+        if (!user) {
+            setLoading(false);
+            return;
+        }
 
         // ── Explicit Dev mode (VITE_DEV_MODE=true) — use mock data ────────────
         if (EXPLICIT_DEV_MODE && isDevMode) {
@@ -71,7 +99,7 @@ export function usePassport() {
             return;
         }
 
-        // ── Production / Sandbox: always hit the API ──────────────────────────
+        // ── Production / Sandbox: try the real API ────────────────────────────
         setLoading(true);
         setError(null);
         try {
@@ -79,8 +107,32 @@ export function usePassport() {
             const res = await fetch(`/api/passport/${walletOrUid}`, {
                 headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
             });
+
+            // Check if we got actual JSON back
+            const data = await safeJsonParse(res);
+
+            if (data === null) {
+                // API returned HTML or non-JSON → backend not available
+                // Show unminted passport so user can still see the UI
+                console.warn('[usePassport] Backend API not available — showing unminted state');
+                setPassport({
+                    wallet_address: walletOrUid,
+                    pi_uid: user.uid,
+                    minted: false,
+                    score: 0,
+                    tier: 'bronze',
+                    score_frozen: false,
+                    pillar_on_chain: 0,
+                    pillar_vouch: 0,
+                    pillar_social: 0,
+                    red_flags: [],
+                    vouches_received: 0,
+                    vouches_given: 0,
+                });
+                return;
+            }
+
             if (res.ok) {
-                const data = await res.json();
                 setPassport({
                     wallet_address: data.wallet_address || walletOrUid,
                     pi_uid: data.pi_uid || user.uid,
@@ -97,7 +149,7 @@ export function usePassport() {
                     minted_at: data.minted_at,
                 });
             } else if (res.status === 404) {
-                // User hasn't minted yet — show unminted state
+                // User hasn't minted yet
                 setPassport({
                     wallet_address: walletOrUid,
                     pi_uid: user.uid,
@@ -117,15 +169,21 @@ export function usePassport() {
             }
         } catch (err) {
             console.error('[usePassport] Fetch failed:', err);
-            setError(err instanceof Error ? err.message : 'Failed to load passport');
-            // If API is completely unreachable and we're in dev mode, fallback
-            if (EXPLICIT_DEV_MODE) {
-                setPassport({
-                    ...DEV_MOCK_PASSPORT,
-                    wallet_address: user.wallet_address || user.uid,
-                    pi_uid: user.uid,
-                });
-            }
+            // Network error or fetch failure — show unminted state, don't crash
+            setPassport({
+                wallet_address: user.wallet_address || user.uid,
+                pi_uid: user.uid,
+                minted: false,
+                score: 0,
+                tier: 'bronze',
+                score_frozen: false,
+                pillar_on_chain: 0,
+                pillar_vouch: 0,
+                pillar_social: 0,
+                red_flags: [],
+                vouches_received: 0,
+                vouches_given: 0,
+            });
         } finally {
             setLoading(false);
         }

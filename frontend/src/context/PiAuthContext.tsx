@@ -1,8 +1,13 @@
 /**
  * PiAuthContext — wraps window.Pi SDK authentication.
- * Waits for the Pi SDK to load (via the 'pi-sdk-ready' event dispatched from index.html)
- * before attempting authentication. Falls back to dev mode ONLY when explicitly
- * running in local dev (VITE_DEV_MODE=true) or after SDK load timeout.
+ * 
+ * Pi SDK Reference (from official docs):
+ *   Pi.init({ version: "2.0", sandbox: true })
+ *   Pi.authenticate(scopes: string[], onIncompletePaymentFound: Function) => Promise<AuthResult>
+ *   
+ *   AuthResult = { accessToken: string, user: { uid, username } }
+ *   scopes: ['payments'] is the standard scope for apps that handle payments
+ *   onIncompletePaymentFound: callback that receives a payment object for any incomplete payment
  */
 import {
     createContext,
@@ -13,7 +18,6 @@ import {
     type ReactNode,
 } from 'react';
 import type { PiUser, PiAuthResult } from '../utils/piTypes';
-import { handleIncompletePayment } from '../utils/helpers';
 
 const DEV_USER: PiUser = {
     uid: 'dev_uid_001',
@@ -22,7 +26,7 @@ const DEV_USER: PiUser = {
 };
 
 const EXPLICIT_DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true';
-const SDK_TIMEOUT_MS = 5000; // Wait up to 5s for Pi SDK to load
+const SDK_TIMEOUT_MS = 4000;
 
 interface PiAuthState {
     user: PiUser | null;
@@ -45,16 +49,9 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
     const [sdkReady, setSdkReady] = useState(false);
     const [isDevMode, setIsDevMode] = useState(false);
 
-    // ── Wait for the Pi SDK to become available ──────────────────────────────
+    // ── Wait for the Pi SDK ──────────────────────────────────────────────────
     useEffect(() => {
-        // If SDK is already loaded (script loaded before React mounted)
-        if (window.Pi && (window as any).__PI_SDK_READY__) {
-            console.log('[PiAuth] SDK already available');
-            setSdkReady(true);
-            return;
-        }
-
-        // If explicitly in dev mode, skip waiting
+        // If explicitly in dev mode, skip SDK entirely
         if (EXPLICIT_DEV_MODE) {
             console.log('[PiAuth] VITE_DEV_MODE=true — entering dev mode');
             setIsDevMode(true);
@@ -64,62 +61,90 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
             return;
         }
 
-        // Listen for the custom event from index.html
+        // Check if SDK is already available (fast path)
+        if (window.Pi) {
+            console.log('[PiAuth] SDK already available on window.Pi');
+            setSdkReady(true);
+            return;
+        }
+
+        // Listen for the custom event from index.html's onload handler
         const handleSdkReady = () => {
             console.log('[PiAuth] Received pi-sdk-ready event');
             setSdkReady(true);
         };
         window.addEventListener('pi-sdk-ready', handleSdkReady);
 
-        // Timeout fallback — if SDK doesn't load after 5s, enter dev mode
+        // Also poll for it — some Pi Browser versions may not fire events properly
+        const pollInterval = setInterval(() => {
+            if (window.Pi) {
+                console.log('[PiAuth] SDK detected via polling');
+                setSdkReady(true);
+                clearInterval(pollInterval);
+            }
+        }, 200);
+
+        // Timeout: if SDK doesn't load, enter dev mode (not in Pi Browser)
         const timeout = setTimeout(() => {
             if (!window.Pi) {
-                console.warn('[PiAuth] Pi SDK did not load within 5s — falling back to dev mode');
+                console.warn(`[PiAuth] Pi SDK did not load within ${SDK_TIMEOUT_MS}ms — not in Pi Browser`);
                 setIsDevMode(true);
                 setUser(DEV_USER);
                 setAccessToken('mock_token_dev');
                 setLoading(false);
+                clearInterval(pollInterval);
             }
         }, SDK_TIMEOUT_MS);
 
         return () => {
             window.removeEventListener('pi-sdk-ready', handleSdkReady);
             clearTimeout(timeout);
+            clearInterval(pollInterval);
         };
     }, []);
 
     // ── Authenticate once SDK is ready ───────────────────────────────────────
     const authenticate = useCallback(async () => {
-        if (!window.Pi) {
-            if (EXPLICIT_DEV_MODE) {
+        const sdk = window.Pi;
+        if (!sdk) {
+            if (EXPLICIT_DEV_MODE || isDevMode) {
                 setUser(DEV_USER);
                 setAccessToken('mock_token_dev');
                 setLoading(false);
                 return;
             }
-            setError('Pi Browser is required. Please open this app inside the Pi Browser.');
+            setError('Pi Browser is required. Open this app inside the Pi Browser.');
             setLoading(false);
             return;
         }
 
-        const sdk = window.Pi;
         setLoading(true);
         setError(null);
+
         try {
+            // Pi SDK authenticate:
+            //   scopes: ['payments'] — request payment permission
+            //   onIncompletePaymentFound: required callback for handling incomplete payments
+            const onIncompletePaymentFound = (payment: any) => {
+                console.log('[PiAuth] Incomplete payment found:', payment);
+                // For now, just log it. In production, you'd complete or cancel it.
+            };
+
             const result: PiAuthResult = await sdk.authenticate(
-                ['username', 'payments', 'wallet_address'],
-                handleIncompletePayment
+                ['payments'],
+                onIncompletePaymentFound
             );
+
             console.log('[PiAuth] Authentication successful:', result.user.username);
             setUser(result.user);
             setAccessToken(result.accessToken);
-        } catch (err) {
+        } catch (err: any) {
             console.error('[PiAuth] Authentication failed:', err);
-            setError(err instanceof Error ? err.message : 'Authentication failed');
+            setError(err?.message || 'Authentication failed. Please try again.');
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [isDevMode]);
 
     const logout = useCallback(() => {
         setUser(null);

@@ -36,6 +36,13 @@ export function Vouch() {
                 const res = await fetch(`/api/vouch/${user.wallet_address || user.uid}`, {
                     headers: { Authorization: `Bearer ${accessToken}` }
                 });
+                // Check if response is actually JSON (Vercel may return HTML)
+                const contentType = res.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    console.warn('[Vouch] API returned non-JSON (backend not available)');
+                    setVouches([]);
+                    return;
+                }
                 if (res.ok) {
                     const data = await res.json();
                     setVouches(data.vouches.map((v: any) => ({
