@@ -61,7 +61,7 @@ const PI_APP_WALLET_PRIVATE_SEED = process.env.PI_APP_WALLET_PRIVATE_SEED || '';
 
 // Connect to the Pi Horizon Node
 // Use the Testnet API for development
-const horizonServer = new StellarSdk.Server('https://api.testnet.minepi.com');
+const horizonServer = new StellarSdk.Horizon.Server('https://api.testnet.minepi.com');
 
 /**
  * Orchestrates an automated App-to-User (A2U) payout.
