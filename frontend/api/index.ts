@@ -581,18 +581,7 @@ app.post('/api/dispute/complete', piAuthMiddleware, writeLimiter, async (req, re
 });
 
 // ── Score Engine (ported from Python FastAPI score_engine/main.py) ─────────────
-// Score = (On-chain 35%) + (Vouch Network 40%) + (Social 25%), scaled to 0–1000
-
-function scoreWalletAge(genesisTimestamp: number | null): number {
-    if (!genesisTimestamp) return 0;
-    const ageMonths = (Date.now() / 1000 - genesisTimestamp) / (60 * 60 * 24 * 30);
-    return Math.min(10, ageMonths / 6);
-}
-
-function scoreTxVolume(txCount: number): number {
-    if (txCount <= 0) return 0;
-    return Math.min(10, Math.log10(txCount + 1) * 5);
-}
+// Score = (On-chain 30%) + (Vouch Network 30%) + (Social 20%) + (Governance 20%), scaled to 0–1000
 
 function scoreTradeCompletion(completed: number, disputed: number): number {
     const total = completed + disputed;
