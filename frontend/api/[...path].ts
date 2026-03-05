@@ -19,15 +19,13 @@ import axios from 'axios';
 import { z } from 'zod';
 
 // ── Database ──────────────────────────────────────────────────────────────────
-// Supabase requires SSL. Append sslmode=require if not already in the URL.
-let dbUrl = process.env.DATABASE_URL || '';
-if (dbUrl && !dbUrl.includes('sslmode=')) {
-    dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'sslmode=require';
-}
+// Supabase pooler uses self-signed certs — ssl.rejectUnauthorized must be false.
+// Do NOT append sslmode=require to the URL — it overrides rejectUnauthorized.
+const dbUrl = process.env.DATABASE_URL || '';
 
 const pool = new Pool({
-    connectionString: dbUrl,
-    max: 3, // Serverless: keep pool VERY small
+    connectionString: dbUrl || undefined,
+    max: 3,
     idleTimeoutMillis: 5000,
     connectionTimeoutMillis: 10000,
     ssl: dbUrl ? { rejectUnauthorized: false } : undefined,
