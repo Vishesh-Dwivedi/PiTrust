@@ -84,9 +84,14 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
             }
         }, 200);
 
-        // Timeout: if SDK doesn't load, enter dev mode (not in Pi Browser)
+        // Timeout: if SDK doesn't load, enter dev mode (only if NOT in Pi Browser)
         const timeout = setTimeout(() => {
             if (!window.Pi) {
+                if (navigator.userAgent.includes('PiBrowser')) {
+                    console.log('[PiAuth] In Pi Browser, continuing to wait for SDK...');
+                    return;
+                }
+
                 console.warn(`[PiAuth] Pi SDK did not load within ${SDK_TIMEOUT_MS}ms — not in Pi Browser`);
                 setIsDevMode(true);
                 setUser(DEV_USER);
@@ -153,7 +158,7 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
             // Race authenticate() against a timeout.
             // Pi.authenticate() hangs forever outside Pi Browser even though
             // window.Pi exists (the SDK script loads in any browser).
-            const AUTH_TIMEOUT = 6000;
+            const AUTH_TIMEOUT = 10000; // Increased to 10s for slow connections
             const authPromise = sdk.authenticate(
                 ['payments'],
                 onIncompletePaymentFound
@@ -180,12 +185,32 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
                 return;
             }
 
-            // Ensure username has a fallback — Pi Sandbox sometimes returns undefined
-            const safeUser: PiUser = {
+            // Base fallback using unverified SDK data
+            let safeUser: PiUser = {
                 uid: authResult.user?.uid || 'unknown',
                 username: authResult.user?.username || 'pioneer',
                 wallet_address: authResult.user?.wallet_address,
             };
+
+            // Fetch verified user from backend Pi API
+            try {
+                const verifyRes = await fetch('/api/auth/me', {
+                    headers: { 'Authorization': `Bearer ${authResult.accessToken}` }
+                });
+                if (verifyRes.ok) {
+                    const verified = await verifyRes.json();
+                    if (verified.username) safeUser.username = verified.username;
+                    if (verified.uid) safeUser.uid = verified.uid; // Update to verified uid!
+                    if (verified.wallet_address) safeUser.wallet_address = verified.wallet_address;
+                    console.log('[PiAuth] Fetched verified Pi profile:', safeUser.username);
+                } else {
+                    console.warn('[PiAuth] Backend auth verification failed:', verifyRes.status);
+                    throw new Error('Backend verification rejected token');
+                }
+            } catch (err) {
+                console.error('[PiAuth] Failed to fetch verified user profile', err);
+                throw new Error('Authentication verification failed.');
+            }
 
             console.log('[PiAuth] Authentication successful:', safeUser.username);
             setUser(safeUser);

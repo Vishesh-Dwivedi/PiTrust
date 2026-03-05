@@ -129,6 +129,13 @@ async function piAuthMiddleware(
     }
 }
 
+// ── Auth Route ────────────────────────────────────────────────────────────────
+const authRouter = express.Router();
+authRouter.get('/me', piAuthMiddleware, (req, res) => {
+    // Return the verified user object from the Pi Platform API
+    res.json(req.piUser);
+});
+
 // ── Express App ───────────────────────────────────────────────────────────────
 const app = express();
 
@@ -160,7 +167,10 @@ const writeLimiter = rateLimit({
     message: { error: 'Rate limit exceeded' },
 });
 
-// ── Health ────────────────────────────────────────────────────────────────────
+// Mount the Auth Router
+app.use('/api/auth', authRouter);
+
+// ── Health Route ──────────────────────────────────────────────────────────────
 app.get('/api/health', async (_req, res) => {
     const masked = dbUrl
         ? dbUrl.replace(/\/\/[^@]+@/, '//***:***@').replace(/\?.+/, '?...')
