@@ -122,22 +122,36 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
         setError(null);
 
         try {
-            // Pi SDK authenticate:
-            //   scopes: ['payments'] — request payment permission
-            //   onIncompletePaymentFound: required callback for handling incomplete payments
             const onIncompletePaymentFound = (payment: any) => {
                 console.log('[PiAuth] Incomplete payment found:', payment);
-                // For now, just log it. In production, you'd complete or cancel it.
             };
 
-            const result: PiAuthResult = await sdk.authenticate(
+            // Race authenticate() against a timeout.
+            // Pi.authenticate() hangs forever outside Pi Browser even though
+            // window.Pi exists (the SDK script loads in any browser).
+            const AUTH_TIMEOUT = 6000;
+            const authPromise = sdk.authenticate(
                 ['payments'],
                 onIncompletePaymentFound
             );
+            const timeoutPromise = new Promise<null>((resolve) =>
+                setTimeout(() => resolve(null), AUTH_TIMEOUT)
+            );
 
-            console.log('[PiAuth] Authentication successful:', result.user.username);
-            setUser(result.user);
-            setAccessToken(result.accessToken);
+            const result = await Promise.race([authPromise, timeoutPromise]);
+
+            if (result === null) {
+                // Timed out — SDK loaded but authenticate() didn't resolve.
+                // Show the app without auth (unminted passport state).
+                console.warn('[PiAuth] authenticate() timed out — showing app without auth');
+                setUser(null);
+                setLoading(false);
+                return;
+            }
+
+            console.log('[PiAuth] Authentication successful:', (result as PiAuthResult).user.username);
+            setUser((result as PiAuthResult).user);
+            setAccessToken((result as PiAuthResult).accessToken);
         } catch (err: any) {
             console.error('[PiAuth] Authentication failed:', err);
             setError(err?.message || 'Authentication failed. Please try again.');
