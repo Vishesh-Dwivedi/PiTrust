@@ -13,16 +13,23 @@
   <link
     href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600&display=swap"
     rel="stylesheet" />
-  <!-- Pi SDK CDN — init ONLY after script fully loads -->
   <script>
     window.__PI_SDK_READY__ = false;
     function __piSdkLoaded() {
       console.log('[PiTrust] Pi SDK script loaded');
       try {
-        Pi.init({ version: "2.0", sandbox: true });
+        // Use sandbox mode only when testing in Pi Sandbox or localhost.
+        // In real Pi Browser (trustpi.space / pinet.com), use production mode.
+        var isSandbox = (
+          window.location.hostname.includes('sandbox.minepi.com') ||
+          window.location.hostname === 'localhost' ||
+          window.location.hostname === '127.0.0.1' ||
+          window.location.search.includes('sandbox=true')
+        );
+        console.log('[PiTrust] Pi.init sandbox=' + isSandbox + ' (host: ' + window.location.hostname + ')');
+        Pi.init({ version: "2.0", sandbox: isSandbox });
         window.__PI_SDK_READY__ = true;
         console.log('[PiTrust] Pi.init() completed successfully');
-        // Dispatch event so React can detect SDK readiness
         window.dispatchEvent(new Event('pi-sdk-ready'));
       } catch (e) {
         console.error('[PiTrust] Pi SDK Init Error:', e);

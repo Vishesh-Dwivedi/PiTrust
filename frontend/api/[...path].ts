@@ -512,13 +512,112 @@ app.post('/api/dispute/complete', piAuthMiddleware, writeLimiter, async (req, re
     }
 });
 
+// ── Score Engine (ported from Python FastAPI score_engine/main.py) ─────────────
+// Score = (On-chain 35%) + (Vouch Network 40%) + (Social 25%), scaled to 0–1000
+
+function scoreWalletAge(genesisTimestamp: number | null): number {
+    if (!genesisTimestamp) return 0;
+    const ageMonths = (Date.now() / 1000 - genesisTimestamp) / (60 * 60 * 24 * 30);
+    return Math.min(10, ageMonths / 6);
+}
+
+function scoreTxVolume(txCount: number): number {
+    if (txCount <= 0) return 0;
+    return Math.min(10, Math.log10(txCount + 1) * 5);
+}
+
+function scoreTradeCompletion(completed: number, disputed: number): number {
+    const total = completed + disputed;
+    if (total === 0) return 5; // Neutral
+    return Math.round((completed / total) * 10 * 100) / 100;
+}
+
+function scoreVouchStake(totalStakePi: number): number {
+    if (totalStakePi <= 0) return 0;
+    return Math.min(20, Math.log(totalStakePi + 1) / Math.log(51) * 20);
+}
+
+function scoreVouchCount(uniqueVouchers: number): number {
+    return Math.min(10, uniqueVouchers);
+}
+
+function scoreSocialPlatforms(platformCount: number): number {
+    return Math.min(16, platformCount * 4);
+}
+
+function scoreToTier(score: number): string {
+    if (score < 100) return 'unverified';
+    if (score < 300) return 'bronze';
+    if (score < 500) return 'silver';
+    if (score < 700) return 'gold';
+    if (score < 900) return 'platinum';
+    return 'sentinel';
+}
+
+async function calculateScore(walletAddress: string): Promise<{ score: number; tier: string; pillar_on_chain: number; pillar_vouch: number; pillar_social: number }> {
+    const row = await queryOne<{
+        completed_trades: number;
+        disputed_trades: number;
+        vouch_count: string;
+        vouch_stake: string;
+        social_count: string;
+    }>(`
+        SELECT p.completed_trades, p.disputed_trades,
+            (SELECT COUNT(*) FROM vouch_events WHERE vouchee_wallet = p.wallet_address AND status = 'active') as vouch_count,
+            (SELECT COALESCE(SUM(net_amount_pi), 0) FROM vouch_events WHERE vouchee_wallet = p.wallet_address AND status = 'active') as vouch_stake,
+            (SELECT COUNT(*) FROM social_attestations WHERE wallet_address = p.wallet_address AND active = TRUE) as social_count
+        FROM passports p WHERE p.wallet_address = $1
+    `, [walletAddress]);
+
+    if (!row) return { score: 0, tier: 'unverified', pillar_on_chain: 0, pillar_vouch: 0, pillar_social: 0 };
+
+    // On-chain component (max 35 raw pts)
+    const tradePts = scoreTradeCompletion(row.completed_trades || 0, row.disputed_trades || 0);
+    const onchainRaw = Math.min(35, tradePts + 5); // +5 baseline for having a passport
+
+    // Vouch Network component (max 40 raw pts)
+    const vouchStakePts = scoreVouchStake(parseFloat(row.vouch_stake || '0'));
+    const vouchCountPts = scoreVouchCount(parseInt(row.vouch_count || '0'));
+    const vouchQualityPts = 5; // Placeholder for v2
+    const vouchRaw = Math.min(40, vouchStakePts + vouchCountPts + vouchQualityPts);
+
+    // Social attestation component (max 25 raw pts)
+    const socialPts = scoreSocialPlatforms(parseInt(row.social_count || '0'));
+    const socialAgePts = Math.min(9, 3); // Simplified placeholder
+    const socialRaw = Math.min(25, socialPts + socialAgePts);
+
+    // Final score: raw (0-100) → scaled (0-1000)
+    const rawTotal = onchainRaw + vouchRaw + socialRaw;
+    const finalScore = Math.min(1000, Math.max(0, Math.round(rawTotal * 10)));
+    const tier = scoreToTier(finalScore);
+
+    // Pillar breakdown scaled to display values
+    const pillar_on_chain = Math.round(onchainRaw / 35 * 400);
+    const pillar_vouch = Math.round(vouchRaw / 40 * 300);
+    const pillar_social = Math.round(socialRaw / 25 * 300);
+
+    return { score: finalScore, tier, pillar_on_chain, pillar_vouch, pillar_social };
+}
+
 // ── Score Route ───────────────────────────────────────────────────────────────
 app.get('/api/score/:wallet', async (req, res) => {
-    const passport = await queryOne<{ score: number; tier: string; last_score_update: string }>(
-        'SELECT score, tier, last_score_update FROM passports WHERE wallet_address = $1',
-        [req.params.wallet]
-    );
-    res.json(passport ?? { score: 0, tier: 'unverified', last_score_update: null });
+    try {
+        const result = await calculateScore(req.params.wallet);
+        // Update the score in the database
+        await query(
+            'UPDATE passports SET score = $1, tier = $2, last_score_update = NOW() WHERE wallet_address = $3',
+            [result.score, result.tier, req.params.wallet]
+        );
+        res.json({ wallet: req.params.wallet, ...result, last_score_update: new Date().toISOString() });
+    } catch (err) {
+        console.error('Score calculation error:', err);
+        // Fallback to stored score
+        const passport = await queryOne<{ score: number; tier: string; last_score_update: string }>(
+            'SELECT score, tier, last_score_update FROM passports WHERE wallet_address = $1',
+            [req.params.wallet]
+        );
+        res.json(passport ?? { score: 0, tier: 'unverified', last_score_update: null });
+    }
 });
 
 // ── Merchant Route ────────────────────────────────────────────────────────────
