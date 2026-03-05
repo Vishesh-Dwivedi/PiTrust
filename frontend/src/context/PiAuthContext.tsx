@@ -122,8 +122,32 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
         setError(null);
 
         try {
-            const onIncompletePaymentFound = (payment: any) => {
-                console.log('[PiAuth] Incomplete payment found:', payment);
+            // CRITICAL: onIncompletePaymentFound MUST process the payment.
+            // If it just logs and does nothing, Pi.authenticate() HANGS FOREVER.
+            // The SDK calls this callback for any incomplete server payment
+            // and waits for it to resolve before resolving authenticate().
+            const onIncompletePaymentFound = async (payment: any) => {
+                console.log('[PiAuth] Incomplete payment found:', payment?.identifier);
+                try {
+                    if (payment?.transaction?.txid && !payment?.status?.developer_completed) {
+                        // Has a blockchain txid but wasn't completed — try to complete it
+                        await fetch('/api/passport/complete-mint', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                paymentId: payment.identifier,
+                                txId: payment.transaction.txid,
+                            }),
+                        });
+                        console.log('[PiAuth] Completed incomplete payment:', payment.identifier);
+                    } else {
+                        // No txid = user never signed it. Just log and move on.
+                        console.log('[PiAuth] Skipping incomplete payment (no txid):', payment?.identifier);
+                    }
+                } catch (err) {
+                    console.error('[PiAuth] Error handling incomplete payment:', err);
+                }
+                // Callback MUST return/resolve for authenticate() to continue
             };
 
             // Race authenticate() against a timeout.

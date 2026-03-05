@@ -33,8 +33,8 @@ function getNextTier(score: number) {
 }
 
 export function Dashboard() {
-    const { user, loading: authLoading, error: authError, isDevMode } = usePiAuth();
-    const { passport, loading: passportLoading, error: passportError } = usePassport();
+    const { user, loading: authLoading, error: authError } = usePiAuth();
+    const { passport, loading: passportLoading } = usePassport();
     const navigate = useNavigate();
 
     // Show skeleton while loading
