@@ -29,8 +29,8 @@ export function AppShell({ children }: AppShellProps) {
                 </div>
                 {user && (
                     <div className="app-header__user">
-                        <span className="user-avatar">{user.username.charAt(0).toUpperCase()}</span>
-                        <span className="user-name">@{user.username}</span>
+                        <span className="user-avatar">{(user.username || 'P').charAt(0).toUpperCase()}</span>
+                        <span className="user-name">@{user.username || 'pioneer'}</span>
                     </div>
                 )}
             </header>

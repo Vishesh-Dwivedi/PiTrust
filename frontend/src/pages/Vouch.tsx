@@ -157,7 +157,7 @@ export function Vouch() {
                     .map(v => (
                         <div key={v.wallet} className="vouch-card frost-card">
                             <div className="vouch-card__left">
-                                <div className="vouch-avatar">{v.username.charAt(0).toUpperCase()}</div>
+                                <div className="vouch-avatar">{(v.username || 'P').charAt(0).toUpperCase()}</div>
                                 <div className="vouch-info">
                                     <div className="vouch-username">@{v.username}</div>
                                     <div className="vouch-wallet">{formatWallet(v.wallet)}</div>

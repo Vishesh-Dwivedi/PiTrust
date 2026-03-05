@@ -165,17 +165,31 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
             const result = await Promise.race([authPromise, timeoutPromise]);
 
             if (result === null) {
-                // Timed out — SDK loaded but authenticate() didn't resolve.
-                // Show the app without auth (unminted passport state).
                 console.warn('[PiAuth] authenticate() timed out — showing app without auth');
                 setUser(null);
                 setLoading(false);
                 return;
             }
 
-            console.log('[PiAuth] Authentication successful:', (result as PiAuthResult).user.username);
-            setUser((result as PiAuthResult).user);
-            setAccessToken((result as PiAuthResult).accessToken);
+            const authResult = result as PiAuthResult;
+            // Validate the auth result — Pi Sandbox can return partial data
+            if (!authResult?.user?.uid && !authResult?.accessToken) {
+                console.warn('[PiAuth] authenticate() returned invalid result:', authResult);
+                setUser(null);
+                setLoading(false);
+                return;
+            }
+
+            // Ensure username has a fallback — Pi Sandbox sometimes returns undefined
+            const safeUser: PiUser = {
+                uid: authResult.user?.uid || 'unknown',
+                username: authResult.user?.username || 'pioneer',
+                wallet_address: authResult.user?.wallet_address,
+            };
+
+            console.log('[PiAuth] Authentication successful:', safeUser.username);
+            setUser(safeUser);
+            setAccessToken(authResult.accessToken);
         } catch (err: any) {
             console.error('[PiAuth] Authentication failed:', err);
             setError(err?.message || 'Authentication failed. Please try again.');
