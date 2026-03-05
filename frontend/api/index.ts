@@ -718,6 +718,29 @@ app.post('/api/quests/complete', piAuthMiddleware, writeLimiter, async (req, res
     }
 });
 
+// Security Headers Middleware
+app.use((req, res, next) => {
+    res.setHeader('X-Frame-Options', 'ALLOWALL');
+    res.setHeader('Content-Security-Policy', "frame-ancestors *");
+    // Disable caching for api responses
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    next();
+});
+
+// ── Root / Health / Validation ────────────────────────────────────────────────────────
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+app.get('/api', (req, res) => res.json({ message: 'PiTrust API v1 Running on Vercel' }));
+
+// Bulletproof fallback for Pi Developer validation bot
+app.get('/validation-key.txt', (req, res) => {
+    res.set('Content-Type', 'text/plain; charset=utf-8');
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
+    res.set('Surrogate-Control', 'no-store');
+    res.send('4bcb87b8aa6d5f864e36edcefa323ef25130ad02432f0b1607e47bcd2fa65846b3a622367c321571252c91fa4bf175c4271618e73a3cb24e48ea3ddebedb2e00');
+});
+
 // ── Merchant Route ────────────────────────────────────────────────────────────
 app.get('/api/merchant', async (req, res) => {
     const page = parseInt(req.query.page as string || '1');
