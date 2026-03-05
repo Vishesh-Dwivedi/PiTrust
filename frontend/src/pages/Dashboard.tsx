@@ -53,9 +53,17 @@ export function Dashboard() {
                         Open <strong>trustpi.space</strong> inside the <strong>Pi Browser</strong> to authenticate with your Pi account, mint your Trust Passport, and start building your on-chain reputation.
                     </p>
                 </div>
-                <p className="auth-required__help" style={{ fontSize: '13px', opacity: 0.5 }}>
-                    {authError || 'Pi Browser authentication is required to access your dashboard.'}
-                </p>
+                {authError && (
+                    <div style={{ padding: '12px', background: 'rgba(239, 68, 68, 0.15)', border: '1px solid #ef4444', borderRadius: '8px', color: '#fca5a5', fontSize: '14px', textAlign: 'left', marginTop: '16px' }}>
+                        <strong>Authentication Error:</strong><br />
+                        {authError}
+                    </div>
+                )}
+                {!authError && (
+                    <p className="auth-required__help" style={{ fontSize: '13px', opacity: 0.5, marginTop: '16px' }}>
+                        Waiting for Pi SDK authorization...
+                    </p>
+                )}
             </div>
         </div>
     );

@@ -151,10 +151,9 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
                 // Callback MUST return/resolve for authenticate() to continue
             };
 
-            // Await authenticate() indefinitely. The Pi SDK will handle overlays
             // and timeouts itself. If we interrupt it, we break the flow.
             const authResult = await sdk.authenticate(
-                ['payments'],
+                ['username', 'payments'],
                 onIncompletePaymentFound
             ) as PiAuthResult;
             // Validate the auth result — Pi Sandbox can return partial data
@@ -184,12 +183,13 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
                     if (verified.wallet_address) safeUser.wallet_address = verified.wallet_address;
                     console.log('[PiAuth] Fetched verified Pi profile:', safeUser.username);
                 } else {
-                    console.warn('[PiAuth] Backend auth verification failed:', verifyRes.status);
-                    throw new Error('Backend verification rejected token');
+                    const txt = await verifyRes.text();
+                    console.warn('[PiAuth] Backend auth verification failed:', verifyRes.status, txt);
+                    throw new Error(`Backend verification rejected token: ${verifyRes.status} - ${txt}`);
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error('[PiAuth] Failed to fetch verified user profile', err);
-                throw new Error('Authentication verification failed.');
+                throw new Error(`Auth verification failed: ${err.message}`);
             }
 
             console.log('[PiAuth] Authentication successful:', safeUser.username);
@@ -197,7 +197,7 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
             setAccessToken(authResult.accessToken);
         } catch (err: any) {
             console.error('[PiAuth] Authentication failed:', err);
-            setError(err?.message || 'Authentication failed. Please try again.');
+            setError(err?.message || String(err) || 'Authentication failed. Please try again.');
         } finally {
             setLoading(false);
         }
