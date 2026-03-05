@@ -19,12 +19,22 @@ import axios from 'axios';
 import { z } from 'zod';
 
 // ── Database ──────────────────────────────────────────────────────────────────
+// Supabase requires SSL. Append sslmode=require if not already in the URL.
+let dbUrl = process.env.DATABASE_URL || '';
+if (dbUrl && !dbUrl.includes('sslmode=')) {
+    dbUrl += (dbUrl.includes('?') ? '&' : '?') + 'sslmode=require';
+}
+
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    max: 5, // Serverless: keep pool small
-    idleTimeoutMillis: 10000,
-    connectionTimeoutMillis: 5000,
-    ssl: { rejectUnauthorized: false },
+    connectionString: dbUrl,
+    max: 3, // Serverless: keep pool VERY small
+    idleTimeoutMillis: 5000,
+    connectionTimeoutMillis: 10000,
+    ssl: dbUrl ? { rejectUnauthorized: false } : undefined,
+});
+
+pool.on('error', (err) => {
+    console.error('[DB] Pool error:', err.message);
 });
 
 async function query<T extends object>(text: string, params?: unknown[]): Promise<T[]> {
@@ -154,11 +164,25 @@ const writeLimiter = rateLimit({
 
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get('/api/health', async (_req, res) => {
+    const masked = dbUrl
+        ? dbUrl.replace(/\/\/[^@]+@/, '//***:***@').replace(/\?.+/, '?...')
+        : '(not set)';
     try {
-        await pool.query('SELECT 1');
-        res.json({ status: 'ok', timestamp: new Date().toISOString() });
-    } catch {
-        res.status(503).json({ status: 'error', message: 'DB unavailable' });
+        const result = await pool.query('SELECT NOW() as now');
+        res.json({
+            status: 'ok',
+            db: 'connected',
+            db_time: result.rows[0]?.now,
+            db_url_masked: masked,
+            timestamp: new Date().toISOString(),
+        });
+    } catch (err: any) {
+        res.status(503).json({
+            status: 'error',
+            message: 'DB unavailable',
+            detail: err?.message || 'Unknown',
+            db_url_masked: masked,
+        });
     }
 });
 
