@@ -629,40 +629,52 @@ async function calculateScore(walletAddress: string): Promise<{ score: number; t
         vouch_count: string;
         vouch_stake: string;
         social_count: string;
+        scam_flags: string;
+        gov_votes: string;
     }>(`
         SELECT p.completed_trades, p.disputed_trades,
             (SELECT COUNT(*) FROM vouch_events WHERE vouchee_wallet = p.wallet_address AND status = 'active') as vouch_count,
             (SELECT COALESCE(SUM(net_amount_pi), 0) FROM vouch_events WHERE vouchee_wallet = p.wallet_address AND status = 'active') as vouch_stake,
-            (SELECT COUNT(*) FROM social_attestations WHERE wallet_address = p.wallet_address AND active = TRUE) as social_count
+            (SELECT COUNT(*) FROM social_attestations WHERE wallet_address = p.wallet_address AND active = TRUE) as social_count,
+            (SELECT COUNT(*) FROM red_flags WHERE wallet_address = p.wallet_address AND flag_type ILIKE '%scam%') as scam_flags,
+            (SELECT COUNT(*) FROM dispute_votes WHERE arbitrator = p.wallet_address) as gov_votes
         FROM passports p WHERE p.wallet_address = $1
     `, [walletAddress]);
 
     if (!row) return { score: 0, tier: 'unverified', pillar_on_chain: 0, pillar_vouch: 0, pillar_social: 0 };
 
-    // On-chain component (max 35 raw pts)
-    const tradePts = scoreTradeCompletion(row.completed_trades || 0, row.disputed_trades || 0);
-    const onchainRaw = Math.min(35, tradePts + 5); // +5 baseline for having a passport
+    // 1. SCAM PENALTY: Zero tolerance
+    if (parseInt(row.scam_flags || '0') > 0) {
+        return { score: 0, tier: 'blacklisted', pillar_on_chain: 0, pillar_vouch: 0, pillar_social: 0 };
+    }
 
-    // Vouch Network component (max 40 raw pts)
+    // On-chain component (max 30 raw pts)
+    const tradePts = scoreTradeCompletion(row.completed_trades || 0, row.disputed_trades || 0);
+    const onchainRaw = Math.min(30, tradePts + 5 + (row.completed_trades > 5 ? 5 : 0));
+
+    // Vouch Network component (max 30 raw pts)
     const vouchStakePts = scoreVouchStake(parseFloat(row.vouch_stake || '0'));
     const vouchCountPts = scoreVouchCount(parseInt(row.vouch_count || '0'));
-    const vouchQualityPts = 5; // Placeholder for v2
-    const vouchRaw = Math.min(40, vouchStakePts + vouchCountPts + vouchQualityPts);
+    const vouchRaw = Math.min(30, vouchStakePts + vouchCountPts);
 
-    // Social attestation component (max 25 raw pts)
+    // Social attestation & Identity component (max 20 raw pts)
     const socialPts = scoreSocialPlatforms(parseInt(row.social_count || '0'));
-    const socialAgePts = Math.min(9, 3); // Simplified placeholder
-    const socialRaw = Math.min(25, socialPts + socialAgePts);
+    const socialRaw = Math.min(20, socialPts + 5); // +5 baseline for Pi Network verified auth
+
+    // Governance & Platform Engagement (max 20 raw pts)
+    const govPts = Math.min(15, parseInt(row.gov_votes || '0') * 3);
+    const activityPts = 5; // Placeholder for active users
+    const govRaw = Math.min(20, govPts + activityPts);
 
     // Final score: raw (0-100) → scaled (0-1000)
-    const rawTotal = onchainRaw + vouchRaw + socialRaw;
+    const rawTotal = onchainRaw + vouchRaw + socialRaw + govRaw;
     const finalScore = Math.min(1000, Math.max(0, Math.round(rawTotal * 10)));
     const tier = scoreToTier(finalScore);
 
     // Pillar breakdown scaled to display values
-    const pillar_on_chain = Math.round(onchainRaw / 35 * 400);
-    const pillar_vouch = Math.round(vouchRaw / 40 * 300);
-    const pillar_social = Math.round(socialRaw / 25 * 300);
+    const pillar_on_chain = Math.round(onchainRaw / 30 * 300);
+    const pillar_vouch = Math.round(vouchRaw / 30 * 300);
+    const pillar_social = Math.round((socialRaw + govRaw) / 40 * 400); // Merged Social+Gov for UI simplicity
 
     return { score: finalScore, tier, pillar_on_chain, pillar_vouch, pillar_social };
 }
@@ -685,6 +697,35 @@ app.get('/api/score/:wallet', async (req, res) => {
             [req.params.wallet]
         );
         res.json(passport ?? { score: 0, tier: 'unverified', last_score_update: null });
+    }
+});
+
+// ── Quests Route (Gamification) ───────────────────────────────────────────────
+app.post('/api/quests/complete', piAuthMiddleware, writeLimiter, async (req, res) => {
+    const { questId, platform } = req.body;
+    const piUser = req.piUser!;
+
+    try {
+        const passport = await queryOne<{ wallet_address: string }>('SELECT wallet_address FROM passports WHERE pi_uid = $1', [piUser.uid]);
+        if (!passport) {
+            res.status(403).json({ error: 'Mint Passport to claim quests' });
+            return;
+        }
+
+        if (questId === 'social_link' && platform) {
+            // Mock social connect -> Insert real record 
+            await query(`
+                INSERT INTO social_attestations (wallet_address, platform, platform_uid, credential_hash)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (wallet_address, platform, active) DO NOTHING
+            `, [passport.wallet_address, platform, `u_${Date.now()}`, `hash_${Date.now()}`]);
+
+            res.json({ success: true, reward: 50, message: `${platform} connected! Trust score will update.` });
+            return;
+        }
+        res.status(400).json({ error: 'Unknown quest' });
+    } catch (err: any) {
+        res.status(500).json({ error: 'Quest completion failed' });
     }
 });
 

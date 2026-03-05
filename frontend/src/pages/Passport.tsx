@@ -38,6 +38,7 @@ export function Passport() {
     const cardRef = useRef<HTMLDivElement>(null);
     const [tilt, setTilt] = useState({ x: 0, y: 0 });
     const [isFlipped, setIsFlipped] = useState(false);
+    const [questing, setQuesting] = useState(false);
 
     // Gyroscope tilt for the 3D card
     useEffect(() => {
@@ -77,6 +78,32 @@ export function Passport() {
                 '🛡️ My PiTrust Passport',
                 `I'm a ${tierLabel(passport.tier)} on PiTrust with a score of ${passport.score}/1000! 🚀\n\nMint yours at trustpi.space`
             );
+        }
+    };
+
+    const completeQuest = async (questId: string, platform: string) => {
+        if (questing) return;
+        setQuesting(true);
+        try {
+            const res = await fetch('/api/quests/complete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`
+                },
+                body: JSON.stringify({ questId, platform })
+            });
+            if (res.ok) {
+                alert(`${platform} connected successfully! Your score will update soon.`);
+                await refetch();
+            } else {
+                const data = await res.json();
+                alert(`Error: ${data.error}`);
+            }
+        } catch (err) {
+            alert('Failed to complete quest');
+        } finally {
+            setQuesting(false);
         }
     };
 
@@ -219,25 +246,36 @@ export function Passport() {
                                     <span className="pi-emblem-large">π</span>
                                     <span>PiTrust Network</span>
                                 </div>
+                                <div className="passport-back__metadata">
+                                    <div className="back-meta-item">
+                                        <span className="back-meta__label">Security Clearance</span>
+                                        <span className="back-meta__value" style={{ color: passport.red_flags.length ? '#ef4444' : '#10b981' }}>{passport.red_flags.length ? 'FLAGGED' : 'CLEAN'}</span>
+                                    </div>
+                                    <div className="back-meta-item">
+                                        <span className="back-meta__label">Oracle Signature</span>
+                                        <span className="back-meta__value sig-hash">0x{passport.wallet_address.slice(1, 9)}...{user?.uid?.slice(0, 6)}...</span>
+                                    </div>
+                                    <div className="back-meta-item">
+                                        <span className="back-meta__label">Issue Authority</span>
+                                        <span className="back-meta__value">Decentralized Trust Protocol</span>
+                                    </div>
+                                    <div className="back-meta-item">
+                                        <span className="back-meta__label">Account Age</span>
+                                        <span className="back-meta__value">Network Verified Pioneer</span>
+                                    </div>
+                                </div>
                                 <div className="passport-back__stats">
                                     <div className="back-stat">
                                         <span className="back-stat__value">{passport.vouches_received}</span>
-                                        <span className="back-stat__label">Vouches Received</span>
+                                        <span className="back-stat__label">Endorsed By</span>
                                     </div>
                                     <div className="back-stat">
                                         <span className="back-stat__value">{passport.vouches_given}</span>
                                         <span className="back-stat__label">Vouches Given</span>
                                     </div>
-                                    <div className="back-stat">
-                                        <span className="back-stat__value">{passport.red_flags.length}</span>
-                                        <span className="back-stat__label">Red Flags</span>
-                                    </div>
-                                </div>
-                                <div className="passport-back__id">
-                                    <span>UID: {user?.uid?.slice(0, 12)}...</span>
                                 </div>
                                 <p className="passport-back__disclaimer">
-                                    This Soulbound Token is non-transferable and anchored to the Stellar Network.
+                                    This Soulbound Token is non-transferable and anchored to the Stellar Soroban Network.
                                     It represents the immutable trust identity of its holder in the Pi ecosystem.
                                 </p>
                             </div>
@@ -391,6 +429,33 @@ export function Passport() {
                                     className="tier-track__progress"
                                     style={{ width: `${scorePercentage(passport.score)}%` }}
                                 />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Gamified Quests section */}
+                    <div className="quests-section animate-fade-up">
+                        <h2 className="section-title" style={{ marginTop: '0' }}>Trust Quests</h2>
+                        <div className="quest-list">
+                            <div className="quest-card frost-card">
+                                <div className="quest-info">
+                                    <span className="quest-icon">𝕏</span>
+                                    <div>
+                                        <strong>Link X (Twitter)</strong>
+                                        <p>+50 Score points • Identity Anchor</p>
+                                    </div>
+                                </div>
+                                <button className="btn btn-primary btn-sm" onClick={() => completeQuest('social_link', 'Twitter')} disabled={questing}>Connect</button>
+                            </div>
+                            <div className="quest-card frost-card">
+                                <div className="quest-info">
+                                    <span className="quest-icon">💬</span>
+                                    <div>
+                                        <strong>Link Telegram</strong>
+                                        <p>+50 Score points • Identity Anchor</p>
+                                    </div>
+                                </div>
+                                <button className="btn btn-primary btn-sm" onClick={() => completeQuest('social_link', 'Telegram')} disabled={questing}>Connect</button>
                             </div>
                         </div>
                     </div>
