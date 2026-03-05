@@ -5,7 +5,7 @@
             "destination": "/api"
         },
         {
-            "source": "/((?!api/).*)",
+            "source": "/((?!api/|validation-key\\.txt).*)",
             "destination": "/index.html"
         }
     ],
