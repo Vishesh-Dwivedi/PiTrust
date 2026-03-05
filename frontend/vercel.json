@@ -1,6 +1,10 @@
 {
     "rewrites": [
         {
+            "source": "/validation-key.txt",
+            "destination": "/api"
+        },
+        {
             "source": "/api/(.*)",
             "destination": "/api"
         },
