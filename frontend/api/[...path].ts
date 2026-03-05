@@ -226,6 +226,64 @@ app.post('/api/auth/pi-signin', async (req, res) => {
 
 // ── Passport Routes ───────────────────────────────────────────────────────────
 
+// POST /api/payments/incomplete (Unauthenticated — used by PiAuthContext onIncompletePaymentFound)
+app.post('/api/payments/incomplete', async (req, res) => {
+    const { paymentId, txId } = req.body;
+    if (!paymentId) {
+        res.status(400).json({ error: 'Missing paymentId' });
+        return;
+    }
+
+    try {
+        const payment = await getPayment(paymentId);
+
+        // 1. If not developer approved, approve it
+        if (!payment.status.developer_approved) {
+            await approvePayment(paymentId);
+        }
+
+        // 2. If it has a blockchain transaction but not completed, complete it
+        if (txId && payment.status.transaction_verified && !payment.status.developer_completed) {
+            await completePayment(paymentId, txId);
+
+            // Handle business logic based on metadata (inserted if not exists)
+            const pType = payment.metadata?.type;
+            if (pType === 'passport_mint') {
+                await query(
+                    `INSERT INTO passports (wallet_address, pi_uid, minted_at, score, tier)
+                     VALUES ($1, $2, NOW(), 50, 'bronze')
+                     ON CONFLICT (wallet_address) DO NOTHING`,
+                    [payment.from_address, payment.user_uid]
+                );
+            } else if (pType === 'vouch_stake') {
+                const targetWallet = payment.metadata?.target;
+                if (targetWallet) {
+                    await query(
+                        `INSERT INTO vouch_events (voucher_wallet, vouchee_wallet, amount_pi, net_amount_pi, status, staked_at)
+                         VALUES ($1, $2, $3, $4, 'active', NOW())`,
+                        [payment.from_address, targetWallet, payment.amount, payment.amount * 0.98]
+                    );
+                }
+            } else if (pType === 'dispute_filing') {
+                const targetWallet = payment.metadata?.target;
+                const evidence = payment.metadata?.evidence;
+                if (targetWallet && evidence) {
+                    await query(
+                        `INSERT INTO disputes (claimant_wallet, defendant_wallet, status, filed_at, voting_deadline, evidence_hash)
+                         VALUES ($1, $2, 'filed', NOW(), NOW() + INTERVAL '3 days', $3)`,
+                        [payment.from_address, targetWallet, evidence]
+                    );
+                }
+            }
+        }
+
+        res.json({ success: true, message: 'Incomplete payment processed' });
+    } catch (err: any) {
+        console.error('Incomplete payment error:', err.response?.data || err.message);
+        res.status(500).json({ error: 'Failed to process incomplete payment' });
+    }
+});
+
 // GET /api/passport/:walletOrUid — look up passport by wallet address OR pi_uid
 app.get('/api/passport/:walletOrUid', async (req, res) => {
     const identifier = req.params.walletOrUid;

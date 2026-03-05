@@ -84,15 +84,10 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
             }
         }, 200);
 
-        // Timeout: if SDK doesn't load, enter dev mode (only if NOT in Pi Browser)
+        // Timeout: if SDK doesn't load after a reasonable time, enter dev mode
         const timeout = setTimeout(() => {
             if (!window.Pi) {
-                if (navigator.userAgent.includes('PiBrowser')) {
-                    console.log('[PiAuth] In Pi Browser, continuing to wait for SDK...');
-                    return;
-                }
-
-                console.warn(`[PiAuth] Pi SDK did not load within ${SDK_TIMEOUT_MS}ms — not in Pi Browser`);
+                console.warn(`[PiAuth] Pi SDK did not load within ${SDK_TIMEOUT_MS}ms`);
                 setIsDevMode(true);
                 setUser(DEV_USER);
                 setAccessToken('mock_token_dev');
@@ -134,17 +129,18 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
             const onIncompletePaymentFound = async (payment: any) => {
                 console.log('[PiAuth] Incomplete payment found:', payment?.identifier);
                 try {
-                    if (payment?.transaction?.txid && !payment?.status?.developer_completed) {
-                        // Has a blockchain txid but wasn't completed — try to complete it
-                        await fetch('/api/passport/complete-mint', {
+                    if (!payment?.status?.developer_completed) {
+                        // Forward the payment to our unauthenticated handler to process it.
+                        // We do not have a Bearer token yet, so this endpoint must use the server PI_API_KEY.
+                        await fetch('/api/payments/incomplete', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 paymentId: payment.identifier,
-                                txId: payment.transaction.txid,
+                                txId: payment?.transaction?.txid || '',
                             }),
                         });
-                        console.log('[PiAuth] Completed incomplete payment:', payment.identifier);
+                        console.log('[PiAuth] Processed incomplete payment:', payment.identifier);
                     } else {
                         // No txid = user never signed it. Just log and move on.
                         console.log('[PiAuth] Skipping incomplete payment (no txid):', payment?.identifier);
@@ -155,28 +151,12 @@ export function PiAuthProvider({ children }: { children: ReactNode }) {
                 // Callback MUST return/resolve for authenticate() to continue
             };
 
-            // Race authenticate() against a timeout.
-            // Pi.authenticate() hangs forever outside Pi Browser even though
-            // window.Pi exists (the SDK script loads in any browser).
-            const AUTH_TIMEOUT = 10000; // Increased to 10s for slow connections
-            const authPromise = sdk.authenticate(
+            // Await authenticate() indefinitely. The Pi SDK will handle overlays
+            // and timeouts itself. If we interrupt it, we break the flow.
+            const authResult = await sdk.authenticate(
                 ['payments'],
                 onIncompletePaymentFound
-            );
-            const timeoutPromise = new Promise<null>((resolve) =>
-                setTimeout(() => resolve(null), AUTH_TIMEOUT)
-            );
-
-            const result = await Promise.race([authPromise, timeoutPromise]);
-
-            if (result === null) {
-                console.warn('[PiAuth] authenticate() timed out — showing app without auth');
-                setUser(null);
-                setLoading(false);
-                return;
-            }
-
-            const authResult = result as PiAuthResult;
+            ) as PiAuthResult;
             // Validate the auth result — Pi Sandbox can return partial data
             if (!authResult?.user?.uid && !authResult?.accessToken) {
                 console.warn('[PiAuth] authenticate() returned invalid result:', authResult);

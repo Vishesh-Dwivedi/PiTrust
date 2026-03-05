@@ -90,6 +90,7 @@ export function usePiPayment(accessToken?: string) {
                     console.error('[PiPayment] Approval error:', e);
                     setError(e instanceof Error ? e.message : 'Server approval failed');
                     setState('error');
+                    throw e; // Let Pi SDK know approval failed
                 }
             },
             onReadyForServerCompletion: async (pid, txid) => {
@@ -121,6 +122,7 @@ export function usePiPayment(accessToken?: string) {
                     console.error('[PiPayment] Completion error:', e);
                     setError(e instanceof Error ? e.message : 'Server completion failed');
                     setState('error');
+                    throw e; // Let Pi SDK know completion failed
                 }
             },
             onCancel: () => {
