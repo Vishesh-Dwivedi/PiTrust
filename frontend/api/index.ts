@@ -17,6 +17,7 @@ import { rateLimit } from 'express-rate-limit';
 import { Pool } from 'pg';
 import axios from 'axios';
 import { z } from 'zod';
+import * as StellarSdk from 'stellar-sdk';
 
 // ── Database ──────────────────────────────────────────────────────────────────
 // Supabase pooler uses self-signed certs — ssl.rejectUnauthorized must be false.
@@ -53,6 +54,70 @@ const piHeaders = () => ({
     Authorization: `Key ${PI_API_KEY}`,
     'Content-Type': 'application/json',
 });
+
+// ── Pi App Wallet Configuration ────────────────────────────────────────────────
+const PI_APP_WALLET_ADDRESS = process.env.PI_APP_WALLET_ADDRESS || '';
+const PI_APP_WALLET_PRIVATE_SEED = process.env.PI_APP_WALLET_PRIVATE_SEED || '';
+
+// Connect to the Pi Horizon Node
+// Use the Testnet API for development
+const horizonServer = new StellarSdk.Server('https://api.testnet.minepi.com');
+
+/**
+ * Orchestrates an automated App-to-User (A2U) payout.
+ */
+async function sendPiToUser(targetUserUid: string, targetWalletFormat: string, amount: number, memo: string) {
+    if (!PI_APP_WALLET_PRIVATE_SEED) {
+        throw new Error('Server wallet seed missing. Cannot process A2U payouts.');
+    }
+
+    try {
+        // 1. Create a Payment Intent via Pi API
+        const paymentData = {
+            amount: amount,
+            memo: memo,
+            metadata: { type: 'automated_payout' },
+            uid: targetUserUid
+        };
+
+        const piIntentRes = await axios.post(`${PI_API_BASE}/v2/payments`, paymentData, { headers: piHeaders() });
+        const paymentId = piIntentRes.data.identifier;
+
+        // 2. Load our App Wallet Keypair using the Secret Seed
+        const appKeypair = StellarSdk.Keypair.fromSecret(PI_APP_WALLET_PRIVATE_SEED);
+        const sourceAccount = await horizonServer.loadAccount(appKeypair.publicKey());
+
+        // 3. Construct the Blockchain Transaction
+        // Pi Testnet passphrase
+        const networkPassphrase = process.env.PI_NETWORK_PASSPHRASE || 'Pi Testnet';
+
+        const tx = new StellarSdk.TransactionBuilder(sourceAccount, {
+            fee: StellarSdk.BASE_FEE,
+            networkPassphrase,
+        })
+            .addOperation(StellarSdk.Operation.payment({
+                destination: targetWalletFormat,
+                asset: StellarSdk.Asset.native(),
+                amount: amount.toString(),
+            }))
+            .addMemo(StellarSdk.Memo.text(paymentId)) // Important: tie Tx to Pi Payment ID
+            .setTimeout(180)
+            .build();
+
+        // 4. Sign & Submit to the Blockchain
+        tx.sign(appKeypair);
+        const submitRes = await horizonServer.submitTransaction(tx);
+        const txId = submitRes.hash;
+
+        // 5. Tell Pi API the payment is completely verified
+        await completePayment(paymentId, txId);
+
+        return { success: true, txId, paymentId };
+    } catch (error: any) {
+        console.error('[A2U Payout] Failed:', error?.response?.data || error.message);
+        throw error;
+    }
+}
 
 async function approvePayment(paymentId: string) {
     const response = await axios.post(
