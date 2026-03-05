@@ -5,7 +5,11 @@
             "destination": "/validation-key.txt"
         },
         {
-            "source": "/(.*)",
+            "source": "/api/(.*)",
+            "destination": "/api/$1"
+        },
+        {
+            "source": "/((?!api/).*)",
             "destination": "/index.html"
         }
     ],
@@ -23,5 +27,10 @@
                 }
             ]
         }
-    ]
+    ],
+    "functions": {
+        "api/**/*.ts": {
+            "maxDuration": 30
+        }
+    }
 }
