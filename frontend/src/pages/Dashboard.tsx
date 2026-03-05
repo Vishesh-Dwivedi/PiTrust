@@ -33,22 +33,28 @@ function getNextTier(score: number) {
 }
 
 export function Dashboard() {
-    const { loading: authLoading, error: authError, isDevMode } = usePiAuth();
+    const { user, loading: authLoading, error: authError, isDevMode } = usePiAuth();
     const { passport, loading: passportLoading, error: passportError } = usePassport();
     const navigate = useNavigate();
 
     // Show skeleton while loading
     if (authLoading || passportLoading) return <DashboardSkeleton />;
 
-    // Auth error — show Pi Browser required message
-    if (authError && !isDevMode) return (
+    // Not authenticated — show welcome/connect screen
+    if (!user) return (
         <div className="dashboard">
             <div className="auth-required frost-card animate-fade-up">
-                <div className="auth-required__icon">🔐</div>
-                <h2>Pi Browser Required</h2>
-                <p>{authError}</p>
-                <p className="auth-required__help">
-                    Open this app inside the Pi Browser to authenticate and access your trust dashboard.
+                <div className="auth-required__icon">🛡️</div>
+                <h2>Welcome to PiTrust</h2>
+                <p>Your decentralized trust identity on the Pi Network.</p>
+                <div style={{ margin: '24px 0', padding: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}>
+                    <p style={{ fontWeight: 600, marginBottom: '8px' }}>To get started:</p>
+                    <p style={{ fontSize: '14px', opacity: 0.8 }}>
+                        Open <strong>trustpi.space</strong> inside the <strong>Pi Browser</strong> to authenticate with your Pi account, mint your Trust Passport, and start building your on-chain reputation.
+                    </p>
+                </div>
+                <p className="auth-required__help" style={{ fontSize: '13px', opacity: 0.5 }}>
+                    {authError || 'Pi Browser authentication is required to access your dashboard.'}
                 </p>
             </div>
         </div>
@@ -57,9 +63,15 @@ export function Dashboard() {
     if (!passport) return (
         <div className="dashboard">
             <div className="auth-required frost-card animate-fade-up">
-                <div className="auth-required__icon">⚠️</div>
-                <h2>Could not load data</h2>
-                <p>{passportError || 'Unable to load your passport data. Please try again.'}</p>
+                <div className="auth-required__icon">🎫</div>
+                <h2>Mint Your Trust Passport</h2>
+                <p>You're authenticated but haven't minted your passport yet.</p>
+                <button
+                    onClick={() => navigate('/passport')}
+                    style={{ marginTop: '16px', padding: '12px 32px', borderRadius: '12px', background: 'linear-gradient(135deg, #3B82F6, #8B5CF6)', border: 'none', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: '15px' }}
+                >
+                    Mint Passport — 1 π
+                </button>
             </div>
         </div>
     );
