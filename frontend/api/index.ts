@@ -49,6 +49,7 @@ async function queryOne<T extends object>(text: string, params?: unknown[]): Pro
 
 // Pi API helpers
 const PI_API_BASE = process.env.PI_API_BASE || 'https://api.minepi.com';
+const PI_API_BASE_TESTNET = 'https://api.testnet.minepi.com';
 const PI_API_KEY = process.env.PI_API_KEY || '';
 
 const piHeaders = () => ({
@@ -121,29 +122,67 @@ export async function sendPiToUser(targetUserUid: string, targetWalletFormat: st
 }
 
 async function approvePayment(paymentId: string) {
-    const response = await axios.post(
-        `${PI_API_BASE}/v2/payments/${paymentId}/approve`,
-        {},
-        { headers: piHeaders(), timeout: 10_000 }
-    );
-    return response.data;
+    try {
+        const response = await axios.post(
+            `${PI_API_BASE}/v2/payments/${paymentId}/approve`,
+            {},
+            { headers: piHeaders(), timeout: 10_000 }
+        );
+        return response.data;
+    } catch (err: any) {
+        if (err.response?.status === 404 && PI_API_BASE !== PI_API_BASE_TESTNET) {
+            console.warn(`[Pi API] Mainnet 404 for approve ${paymentId}, falling back to Testnet...`);
+            const fallbackResponse = await axios.post(
+                `${PI_API_BASE_TESTNET}/v2/payments/${paymentId}/approve`,
+                {},
+                { headers: piHeaders(), timeout: 10_000 }
+            );
+            return fallbackResponse.data;
+        }
+        throw err;
+    }
 }
 
 async function completePayment(paymentId: string, txId: string) {
-    const response = await axios.post(
-        `${PI_API_BASE}/v2/payments/${paymentId}/complete`,
-        { txid: txId },
-        { headers: piHeaders(), timeout: 10_000 }
-    );
-    return response.data;
+    try {
+        const response = await axios.post(
+            `${PI_API_BASE}/v2/payments/${paymentId}/complete`,
+            { txid: txId },
+            { headers: piHeaders(), timeout: 10_000 }
+        );
+        return response.data;
+    } catch (err: any) {
+        if (err.response?.status === 404 && PI_API_BASE !== PI_API_BASE_TESTNET) {
+            console.warn(`[Pi API] Mainnet 404 for complete ${paymentId}, falling back to Testnet...`);
+            const fallbackResponse = await axios.post(
+                `${PI_API_BASE_TESTNET}/v2/payments/${paymentId}/complete`,
+                { txid: txId },
+                { headers: piHeaders(), timeout: 10_000 }
+            );
+            return fallbackResponse.data;
+        }
+        throw err;
+    }
 }
 
 async function getPayment(paymentId: string) {
-    const response = await axios.get(
-        `${PI_API_BASE}/v2/payments/${paymentId}`,
-        { headers: piHeaders(), timeout: 5_000 }
-    );
-    return response.data;
+    try {
+        const response = await axios.get(
+            `${PI_API_BASE}/v2/payments/${paymentId}`,
+            { headers: piHeaders(), timeout: 5_000 }
+        );
+        return response.data;
+    } catch (err: any) {
+        if (err.response?.status === 404 && PI_API_BASE !== PI_API_BASE_TESTNET) {
+            console.warn(`[Pi API] Mainnet 404 for get ${paymentId}, falling back to Testnet...`);
+            const fallbackResponse = await axios.get(
+                `${PI_API_BASE_TESTNET}/v2/payments/${paymentId}`,
+                { headers: piHeaders(), timeout: 5_000 }
+            );
+            return fallbackResponse.data;
+        }
+        throw err;
+    }
 }
 
 const PASSPORT_MINT_PRICE_PI = 1;
