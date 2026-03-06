@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, MouseEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { usePassport } from '../hooks/usePassport';
 import { usePiPayment } from '../hooks/usePiPayment';
 import { usePiAuth } from '../context/PiAuthContext';
@@ -26,6 +27,7 @@ export function Passport() {
     const { user, loading: authLoading, accessToken } = usePiAuth();
     const { passport, loading: passportLoading, refetch, error: passportError } = usePassport();
     const { state: payState, error: payError, pay } = usePiPayment(accessToken || undefined);
+    const navigate = useNavigate();
     const cardRef = useRef<HTMLDivElement>(null);
     const [tilt, setTilt] = useState({ x: 0, y: 0 });
     const [isFlipped, setIsFlipped] = useState(false);
@@ -61,12 +63,35 @@ export function Passport() {
         );
     };
 
-    const handleShare = () => {
-        if (!window.Pi || !passport) return;
-        window.Pi.openShareDialog(
-            'My PiTrust Passport',
-            `I am ${tierLabel(passport.tier)} on PiTrust with a score of ${passport.score}/1000. Check trust before you trade at trustpi.space`
-        );
+    const handleShare = async () => {
+        if (!passport) return;
+
+        const publicUrl = `${window.location.origin}/trust/${encodeURIComponent(passport.wallet_address)}`;
+        const shareText = `I am ${tierLabel(passport.tier)} on PiTrust with a score of ${passport.score}/1000. Check trust before you trade.`;
+
+        try {
+            if (navigator.share) {
+                await navigator.share({
+                    title: 'My PiTrust Passport',
+                    text: shareText,
+                    url: publicUrl,
+                });
+                return;
+            }
+        } catch (err) {
+            console.warn('[Passport] Share cancelled or failed', err);
+        }
+
+        if (window.Pi) {
+            window.Pi.openShareDialog('My PiTrust Passport', `${shareText} ${publicUrl}`);
+        }
+
+        try {
+            await navigator.clipboard.writeText(publicUrl);
+            alert('Public passport link copied to clipboard.');
+        } catch {
+            alert(publicUrl);
+        }
     };
 
     const completeQuest = async (questId: string, platform: string) => {
@@ -390,7 +415,10 @@ export function Passport() {
                             <h2 className="passport-summary__title">{passport.trust_summary.headline}</h2>
                             <p className="passport-summary__copy">{passport.trust_summary.subline}</p>
                         </div>
-                        <button className="btn btn-primary share-btn" onClick={handleShare}>Share Passport</button>
+                        <div className="passport-summary__actions">
+                            <button className="btn btn-ghost share-btn" onClick={() => navigate(`/trust/${encodeURIComponent(passport.wallet_address)}`)}>View Public Card</button>
+                            <button className="btn btn-primary share-btn" onClick={() => { void handleShare(); }}>Share Passport</button>
+                        </div>
                     </div>
 
                     <div className="trust-signal-grid animate-fade-up">
@@ -535,3 +563,4 @@ export function Passport() {
         </div>
     );
 }
+

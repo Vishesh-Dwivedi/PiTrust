@@ -145,6 +145,48 @@ async function getPayment(paymentId: string) {
     return response.data;
 }
 
+const PASSPORT_MINT_PRICE_PI = 1;
+const PASSPORT_MINT_MEMOS = new Set(['PiTrust Passport Mint', 'pitrust_mint']);
+
+function assertValidPassportMintPayment(
+    payment: Awaited<ReturnType<typeof getPayment>>,
+    expectedUserUid?: string
+) {
+    if (expectedUserUid && payment.user_uid !== expectedUserUid) {
+        throw new Error('Payment user mismatch');
+    }
+    if (Math.abs(Number(payment.amount) - PASSPORT_MINT_PRICE_PI) > 0.0000001) {
+        throw new Error(`Invalid mint amount: ${payment.amount} Pi`);
+    }
+    if (!PASSPORT_MINT_MEMOS.has(String(payment.memo || ''))) {
+        throw new Error(`Invalid payment memo: ${payment.memo}`);
+    }
+    if (payment.metadata?.type !== 'passport_mint') {
+        throw new Error('Invalid payment type');
+    }
+    if (!payment.from_address) {
+        throw new Error('Payment wallet missing');
+    }
+    if (payment.status.cancelled || payment.status.user_cancelled) {
+        throw new Error('Payment cancelled');
+    }
+}
+
+async function findPassportByIdentity(walletAddress: string, piUid: string) {
+    return queryOne<{
+        id: string;
+        wallet_address: string;
+        pi_uid: string;
+        score: number;
+        tier: string;
+    }>(
+        `SELECT id, wallet_address, pi_uid, score, tier
+         FROM passports
+         WHERE wallet_address = $1 OR pi_uid = $2
+         LIMIT 1`,
+        [walletAddress, piUid]
+    );
+}
 // Pi Auth Middleware
 interface PiUser {
     uid: string;
@@ -301,44 +343,45 @@ app.post('/api/payments/incomplete', async (req, res) => {
 
     try {
         const payment = await getPayment(paymentId);
+        const resolvedTxId = txId || payment.transaction?.txid || '';
 
-        // 1. If not developer approved, approve it
         if (!payment.status.developer_approved) {
             await approvePayment(paymentId);
         }
 
-        // 2. If it has a blockchain transaction but not completed, complete it
-        if (txId && payment.status.transaction_verified && !payment.status.developer_completed) {
-            await completePayment(paymentId, txId);
+        if (resolvedTxId && payment.status.transaction_verified && !payment.status.developer_completed) {
+            await completePayment(paymentId, resolvedTxId);
+        }
 
-            // Handle business logic based on metadata (inserted if not exists)
-            const pType = payment.metadata?.type;
-            if (pType === 'passport_mint') {
+        const pType = payment.metadata?.type;
+        if (pType === 'passport_mint' && payment.status.transaction_verified) {
+            assertValidPassportMintPayment(payment, payment.user_uid);
+            const existingPassport = await findPassportByIdentity(payment.from_address, payment.user_uid);
+            if (!existingPassport) {
                 await query(
                     `INSERT INTO passports (wallet_address, pi_uid, minted_at, score, tier)
-                     VALUES ($1, $2, NOW(), 50, 'bronze')
-                     ON CONFLICT (wallet_address) DO NOTHING`,
+                     VALUES ($1, $2, NOW(), 50, 'bronze')`,
                     [payment.from_address, payment.user_uid]
                 );
-            } else if (pType === 'vouch_stake') {
-                const targetWallet = payment.metadata?.target;
-                if (targetWallet) {
-                    await query(
-                        `INSERT INTO vouch_events (voucher_wallet, vouchee_wallet, amount_pi, net_amount_pi, status, staked_at)
-                         VALUES ($1, $2, $3, $4, 'active', NOW())`,
-                        [payment.from_address, targetWallet, payment.amount, payment.amount * 0.98]
-                    );
-                }
-            } else if (pType === 'dispute_filing') {
-                const targetWallet = payment.metadata?.target;
-                const evidence = payment.metadata?.evidence;
-                if (targetWallet && evidence) {
-                    await query(
-                        `INSERT INTO disputes (claimant_wallet, defendant_wallet, status, filed_at, voting_deadline, evidence_hash)
-                         VALUES ($1, $2, 'filed', NOW(), NOW() + INTERVAL '3 days', $3)`,
-                        [payment.from_address, targetWallet, evidence]
-                    );
-                }
+            }
+        } else if (resolvedTxId && pType === 'vouch_stake' && payment.status.transaction_verified) {
+            const targetWallet = payment.metadata?.target;
+            if (targetWallet) {
+                await query(
+                    `INSERT INTO vouch_events (voucher_wallet, vouchee_wallet, amount_pi, net_amount_pi, status, staked_at)
+                     VALUES ($1, $2, $3, $4, 'active', NOW())`,
+                    [payment.from_address, targetWallet, payment.amount, payment.amount * 0.98]
+                );
+            }
+        } else if (resolvedTxId && pType === 'dispute_filing' && payment.status.transaction_verified) {
+            const targetWallet = payment.metadata?.target;
+            const evidence = payment.metadata?.evidence;
+            if (targetWallet && evidence) {
+                await query(
+                    `INSERT INTO disputes (claimant_wallet, defendant_wallet, status, filed_at, voting_deadline, evidence_hash)
+                     VALUES ($1, $2, 'filed', NOW(), NOW() + INTERVAL '3 days', $3)`,
+                    [payment.from_address, targetWallet, evidence]
+                );
             }
         }
 
@@ -349,7 +392,6 @@ app.post('/api/payments/incomplete', async (req, res) => {
     }
 });
 
-// GET /api/passport/:walletOrUid look up passport by wallet address OR pi_uid
 app.get('/api/passport/:walletOrUid', async (req, res) => {
     const identifier = req.params.walletOrUid;
     if (!identifier || identifier.length < 3) {
@@ -633,16 +675,15 @@ app.post('/api/passport/approve-mint', piAuthMiddleware, async (req, res) => {
     const piUser = req.piUser!;
 
     try {
-        const existing = await queryOne('SELECT id FROM passports WHERE pi_uid = $1', [piUser.uid]);
-        if (existing) { res.status(409).json({ error: 'Passport already minted' }); return; }
-
-        // Validate payment
         const payment = await getPayment(paymentId);
-        if (payment.user_uid !== piUser.uid) throw new Error('Payment user mismatch');
-        if (payment.amount < 1) throw new Error(`Insufficient: ${payment.amount} Pi`);
-        if (payment.status.cancelled || payment.status.user_cancelled) throw new Error('Payment cancelled');
+        assertValidPassportMintPayment(payment, piUser.uid);
 
-        await approvePayment(paymentId);
+        const existing = await findPassportByIdentity(payment.from_address, piUser.uid);
+        if (existing) { res.status(409).json({ error: 'Passport already minted for this wallet or user.' }); return; }
+
+        if (!payment.status.developer_approved) {
+            await approvePayment(paymentId);
+        }
         res.json({ approved: true, message: 'Payment approved. Awaiting blockchain confirmation.' });
     } catch (err: unknown) {
         const message = err instanceof Error ? err.message : 'Approval failed';
@@ -665,25 +706,40 @@ app.post('/api/passport/complete-mint', piAuthMiddleware, async (req, res) => {
 
     try {
         const payment = await getPayment(paymentId);
+        assertValidPassportMintPayment(payment, piUser.uid);
+
         if (!payment.status.transaction_verified) {
             res.status(422).json({ error: 'Transaction not yet confirmed' });
             return;
         }
-        await completePayment(paymentId, txId);
+        if (payment.transaction?.txid && payment.transaction.txid !== txId) {
+            res.status(422).json({ error: 'Transaction hash mismatch' });
+            return;
+        }
 
-        await query(
-            `INSERT INTO passports (wallet_address, pi_uid, minted_at, score, tier)
-         VALUES ($1, $2, NOW(), 50, 'bronze')
-         ON CONFLICT (wallet_address) DO NOTHING`,
-            [payment.from_address, piUser.uid]
-        );
+        const existing = await findPassportByIdentity(payment.from_address, piUser.uid);
+        if (existing && (existing.wallet_address !== payment.from_address || existing.pi_uid !== piUser.uid)) {
+            res.status(409).json({ error: 'Passport already exists for a different identity.' });
+            return;
+        }
+
+        if (!payment.status.developer_completed) {
+            await completePayment(paymentId, txId);
+        }
+
+        if (!existing) {
+            await query(
+                "INSERT INTO passports (wallet_address, pi_uid, minted_at, score, tier) VALUES ($1, $2, NOW(), 50, 'bronze')",
+                [payment.from_address, piUser.uid]
+            );
+        }
 
         res.json({
             success: true,
             wallet: payment.from_address,
-            score: 50,
-            tier: 'bronze',
-            message: 'PiTrust Passport minted!',
+            score: existing?.score ?? 50,
+            tier: existing?.tier ?? 'bronze',
+            message: existing ? 'Passport already active.' : 'PiTrust Passport minted!',
         });
     } catch (err) {
         console.error('Complete mint error:', err);

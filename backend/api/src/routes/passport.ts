@@ -1,12 +1,29 @@
 import { Router, Request, Response } from 'express';
 import { piAuthMiddleware } from '../middleware/auth';
 import { query, queryOne } from '../db/client';
-import { CONTRACTS, invokeContract, isPassportMinted } from '../stellar/contracts';
-import { approveMintPayment, completePayment, getPayment } from '../services/payment';
+import { CONTRACTS, invokeContract } from '../stellar/contracts';
+import { approveMintPayment, assertValidPassportMintPayment, completePayment, getPayment } from '../services/payment';
 import { Address } from '@stellar/stellar-sdk';
 import { z } from 'zod';
 
 export const passportRouter = Router();
+
+async function findPassportByIdentity(walletAddress: string, piUid: string) {
+    return queryOne<{
+        id: string;
+        wallet_address: string;
+        pi_uid: string;
+        score: number;
+        tier: string;
+    }>(
+        `SELECT id, wallet_address, pi_uid, score, tier
+         FROM passports
+         WHERE wallet_address = $1 OR pi_uid = $2
+         LIMIT 1`,
+        [walletAddress, piUid]
+    );
+}
+
 
 // GET /api/passport/:wallet
 // Public endpoint: read a passport by wallet address
@@ -298,13 +315,12 @@ passportRouter.post('/approve-mint', piAuthMiddleware, async (req: Request, res:
     const piUser = req.piUser!;
 
     try {
-        // Check if passport already minted
-        const existing = await queryOne(
-            'SELECT id FROM passports WHERE pi_uid = $1',
-            [piUser.uid]
-        );
+        const payment = await getPayment(paymentId);
+        assertValidPassportMintPayment(payment, piUser.uid);
+
+        const existing = await findPassportByIdentity(payment.from_address, piUser.uid);
         if (existing) {
-            res.status(409).json({ error: 'Passport already minted for this Pioneer' });
+            res.status(409).json({ error: 'Passport already minted for this wallet or user.' });
             return;
         }
 
@@ -334,42 +350,53 @@ passportRouter.post('/complete-mint', piAuthMiddleware, async (req: Request, res
     const piUser = req.piUser!;
 
     try {
-        // Verify payment
         const payment = await getPayment(paymentId);
+        assertValidPassportMintPayment(payment, piUser.uid);
+
         if (!payment.status.transaction_verified) {
             res.status(422).json({ error: 'Transaction not yet confirmed on ledger' });
             return;
         }
+        if (payment.transaction?.txid && payment.transaction.txid !== txId) {
+            res.status(422).json({ error: 'Transaction hash mismatch' });
+            return;
+        }
 
-        await completePayment(paymentId, txId);
+        const existing = await findPassportByIdentity(payment.from_address, piUser.uid);
+        if (existing && (existing.wallet_address !== payment.from_address || existing.pi_uid !== piUser.uid)) {
+            res.status(409).json({ error: 'Passport already exists for a different identity.' });
+            return;
+        }
 
-        // Record passport in DB
-        await query(
-            `INSERT INTO passports (wallet_address, pi_uid, minted_at, score, tier)
-       VALUES ($1, $2, NOW(), 50, 'bronze')
-       ON CONFLICT (wallet_address) DO NOTHING`,
-            [payment.from_address, piUser.uid]
-        );
+        if (!payment.status.developer_completed) {
+            await completePayment(paymentId, txId);
+        }
 
-        // Invoke Soroban contract to mint
-        try {
-            await invokeContract({
-                contractId: CONTRACTS.passportSbt,
-                method: 'mint',
-                args: [
-                    new Address(payment.from_address).toScVal()
-                ]
-            });
-        } catch (contractErr) {
-            console.error('Contract passport mint failed:', contractErr);
+        if (!existing) {
+            await query(
+                "INSERT INTO passports (wallet_address, pi_uid, minted_at, score, tier) VALUES ($1, $2, NOW(), 50, 'bronze')",
+                [payment.from_address, piUser.uid]
+            );
+
+            try {
+                await invokeContract({
+                    contractId: CONTRACTS.passportSbt,
+                    method: 'mint',
+                    args: [
+                        new Address(payment.from_address).toScVal()
+                    ]
+                });
+            } catch (contractErr) {
+                console.error('Contract passport mint failed:', contractErr);
+            }
         }
 
         res.json({
             success: true,
             wallet: payment.from_address,
-            score: 50,
-            tier: 'bronze',
-            message: 'PiTrust Passport minted! Score engine will update your score within 4 hours.',
+            score: existing?.score ?? 50,
+            tier: existing?.tier ?? 'bronze',
+            message: existing ? 'Passport already active.' : 'PiTrust Passport minted! Score engine will update your score within 4 hours.',
         });
     } catch (err) {
         console.error('Complete mint error:', err);

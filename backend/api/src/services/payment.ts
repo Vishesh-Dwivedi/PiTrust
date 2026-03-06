@@ -1,15 +1,14 @@
 /**
  * Pi Platform payment service.
  * Handles the 3-step Pi payment lifecycle:
- *  1. create_payment (frontend → Pi SDK)
- *  2. Approve (backend /approve endpoint — this file)
+ *  1. create_payment (frontend -> Pi SDK)
+ *  2. Approve (backend /approve endpoint - this file)
  *  3. complete_payment (backend /complete endpoint)
  *
  * Reference: https://developers.minepi.com/doc/pi-network-developer-guide
  */
 
 import axios from 'axios';
-import { query } from '../db/client';
 
 const PI_API_BASE = process.env.PI_API_BASE || 'https://api.minepi.com';
 const PI_API_KEY = process.env.PI_API_KEY || '';
@@ -81,9 +80,35 @@ export async function getPayment(paymentId: string): Promise<PiPayment> {
     return response.data;
 }
 
+const PASSPORT_MINT_PRICE_PI = 1;
+const PASSPORT_MINT_MEMOS = new Set(['PiTrust Passport Mint', 'pitrust_mint']);
+
+export function assertValidPassportMintPayment(
+    payment: PiPayment,
+    expectedUserUid?: string
+) {
+    if (expectedUserUid && payment.user_uid !== expectedUserUid) {
+        throw new Error('Payment user_uid mismatch');
+    }
+    if (Math.abs(Number(payment.amount) - PASSPORT_MINT_PRICE_PI) > 0.0000001) {
+        throw new Error(`Invalid mint payment amount: ${payment.amount} Pi`);
+    }
+    if (!PASSPORT_MINT_MEMOS.has(String(payment.memo || ''))) {
+        throw new Error(`Invalid payment memo: ${payment.memo}`);
+    }
+    if (payment.metadata?.type !== 'passport_mint') {
+        throw new Error('Invalid payment type');
+    }
+    if (!payment.from_address) {
+        throw new Error('Payment wallet missing');
+    }
+    if (payment.status.cancelled || payment.status.user_cancelled) {
+        throw new Error('Payment was cancelled');
+    }
+}
+
 /**
  * Validate and approve a passport mint payment.
- * Expected amount: 1 Pi, memo: 'pitrust_mint'
  */
 export async function approveMintPayment(
     paymentId: string,
@@ -91,21 +116,15 @@ export async function approveMintPayment(
 ): Promise<PiPayment> {
     const payment = await getPayment(paymentId);
 
-    if (payment.user_uid !== userUid) {
-        throw new Error('Payment user_uid mismatch');
-    }
-    if (payment.amount < 1) {
-        throw new Error(`Insufficient mint payment: ${payment.amount} Pi`);
-    }
-    if (payment.memo !== 'pitrust_mint') {
-        throw new Error(`Invalid payment memo: ${payment.memo}`);
-    }
-    if (payment.status.cancelled || payment.status.user_cancelled) {
-        throw new Error('Payment was cancelled');
+    assertValidPassportMintPayment(payment, userUid);
+
+    if (payment.status.developer_approved) {
+        return payment;
     }
 
     return approvePayment(paymentId);
 }
+
 
 /**
  * Look for any incomplete payments on startup (incomplete payment recovery flow).

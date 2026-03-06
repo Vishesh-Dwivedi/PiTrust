@@ -1,8 +1,8 @@
 /**
  * usePassport fetches passport data for the authenticated user.
  *
- * On Vercel SPA deployments, /api/* can return HTML when the backend is not
- * available. Guard JSON parsing and fall back to an unminted passport shape.
+ * Shared normalization helpers are exported so public passport pages can
+ * consume the same API shape without booting Pi auth.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { usePiAuth } from '../context/PiAuthContext';
@@ -95,6 +95,13 @@ export interface PassportData {
     history_count: number;
 }
 
+interface FetchPassportOptions {
+    accessToken?: string | null;
+    piUid?: string;
+    fallbackToUnminted?: boolean;
+    piAuthenticatedFallback?: boolean;
+}
+
 const DEV_MOCK_PASSPORT: PassportData = {
     wallet_address: 'GDEV1234MOCK5678ABCD',
     pi_uid: 'dev_uid_001',
@@ -160,7 +167,7 @@ const DEV_MOCK_PASSPORT: PassportData = {
     history_count: 1,
 };
 
-async function safeJsonParse(res: Response): Promise<any | null> {
+export async function safeJsonParse(res: Response): Promise<any | null> {
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
         console.warn('[usePassport] Response is not JSON (Content-Type:', contentType, ')');
@@ -174,7 +181,11 @@ async function safeJsonParse(res: Response): Promise<any | null> {
     }
 }
 
-function buildUnmintedPassport(walletOrUid: string, piUid: string): PassportData {
+export function buildUnmintedPassport(
+    walletOrUid: string,
+    piUid: string,
+    piAuthenticated = true
+): PassportData {
     return {
         wallet_address: walletOrUid,
         pi_uid: piUid,
@@ -204,7 +215,7 @@ function buildUnmintedPassport(walletOrUid: string, piUid: string): PassportData
             total: 0,
         },
         verification_flags: {
-            pi_authenticated: true,
+            pi_authenticated: piAuthenticated,
             wallet_bound: !!walletOrUid,
             social_verified_count: 0,
             has_active_red_flags: false,
@@ -227,7 +238,12 @@ function buildUnmintedPassport(walletOrUid: string, piUid: string): PassportData
     };
 }
 
-function normalizePassportData(data: any, walletOrUid: string, piUid: string): PassportData {
+export function normalizePassportData(
+    data: any,
+    walletOrUid: string,
+    piUid: string,
+    piAuthenticatedFallback = true
+): PassportData {
     const score = data.score ?? 0;
     const tier = scoreToTier(score);
     const pillarOnChain = data.pillar_on_chain ?? data.score_breakdown?.on_chain ?? 0;
@@ -270,7 +286,7 @@ function normalizePassportData(data: any, walletOrUid: string, piUid: string): P
             total: data.score_breakdown?.total ?? score,
         },
         verification_flags: {
-            pi_authenticated: data.verification_flags?.pi_authenticated ?? true,
+            pi_authenticated: data.verification_flags?.pi_authenticated ?? piAuthenticatedFallback,
             wallet_bound: data.verification_flags?.wallet_bound ?? true,
             social_verified_count: data.verification_flags?.social_verified_count ?? verifiedSocial.length,
             has_active_red_flags: data.verification_flags?.has_active_red_flags ?? redFlags.length > 0,
@@ -293,6 +309,45 @@ function normalizePassportData(data: any, walletOrUid: string, piUid: string): P
     };
 }
 
+export async function fetchPassportRecord(
+    walletOrUid: string,
+    options: FetchPassportOptions = {}
+): Promise<PassportData | null> {
+    const {
+        accessToken,
+        piUid = walletOrUid,
+        fallbackToUnminted = false,
+        piAuthenticatedFallback = true,
+    } = options;
+
+    const res = await fetch(`/api/passport/${encodeURIComponent(walletOrUid)}`, {
+        headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    });
+
+    const data = await safeJsonParse(res);
+    if (data === null) {
+        if (fallbackToUnminted) {
+            console.warn('[usePassport] Backend API not available, showing unminted state');
+            return buildUnmintedPassport(walletOrUid, piUid, piAuthenticatedFallback);
+        }
+        throw new Error('Passport API returned a non-JSON response');
+    }
+
+    if (res.ok) {
+        return normalizePassportData(data, walletOrUid, piUid, piAuthenticatedFallback);
+    }
+
+    if (res.status === 404) {
+        if (fallbackToUnminted) {
+            return buildUnmintedPassport(walletOrUid, piUid, piAuthenticatedFallback);
+        }
+        return null;
+    }
+
+    const apiMessage = typeof data?.error === 'string' ? data.error : `API error: HTTP ${res.status}`;
+    throw new Error(apiMessage);
+}
+
 export function usePassport() {
     const { user, accessToken, isDevMode } = usePiAuth();
     const [passport, setPassport] = useState<PassportData | null>(null);
@@ -301,6 +356,7 @@ export function usePassport() {
 
     const fetchPassport = useCallback(async () => {
         if (!user) {
+            setPassport(null);
             setLoading(false);
             return;
         }
@@ -321,28 +377,13 @@ export function usePassport() {
         setError(null);
 
         try {
-            const res = await fetch(`/api/passport/${walletOrUid}`, {
-                headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+            const nextPassport = await fetchPassportRecord(walletOrUid, {
+                accessToken,
+                piUid: user.uid,
+                fallbackToUnminted: true,
+                piAuthenticatedFallback: true,
             });
-
-            const data = await safeJsonParse(res);
-            if (data === null) {
-                console.warn('[usePassport] Backend API not available, showing unminted state');
-                setPassport(buildUnmintedPassport(walletOrUid, user.uid));
-                return;
-            }
-
-            if (res.ok) {
-                setPassport(normalizePassportData(data, walletOrUid, user.uid));
-                return;
-            }
-
-            if (res.status === 404) {
-                setPassport(buildUnmintedPassport(walletOrUid, user.uid));
-                return;
-            }
-
-            throw new Error(`API error: HTTP ${res.status}`);
+            setPassport(nextPassport);
         } catch (err) {
             console.error('[usePassport] Fetch failed:', err);
             setError(err instanceof Error ? err.message : 'Failed to fetch passport');
