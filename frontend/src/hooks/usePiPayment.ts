@@ -51,21 +51,26 @@ export function usePiPayment(accessToken?: string) {
         }
 
         const paymentType = data.metadata?.type as string;
-        let approveRoute = '/api/payments/approve';
-        let completeRoute = '/api/payments/complete';
+
+        // Vercel 301 Edge Redirects destroy POST payloads. Force www subdomain for API calls if accessed via apex domain.
+        const isBareDomain = window.location.origin === 'https://trustpi.space';
+        const baseUrl = isBareDomain ? 'https://www.trustpi.space' : window.location.origin;
+
+        let approveRoute = `${baseUrl}/api/payments/approve`;
+        let completeRoute = `${baseUrl}/api/payments/complete`;
 
         if (paymentType === 'vouch_stake') {
-            approveRoute = '/api/vouch/approve';
-            completeRoute = '/api/vouch/complete';
+            approveRoute = `${baseUrl}/api/vouch/approve`;
+            completeRoute = `${baseUrl}/api/vouch/complete`;
         } else if (paymentType === 'dispute_filing') {
-            approveRoute = '/api/dispute/file';
-            completeRoute = '/api/dispute/complete';
+            approveRoute = `${baseUrl}/api/dispute/file`;
+            completeRoute = `${baseUrl}/api/dispute/complete`;
         } else if (paymentType === 'passport_mint') {
-            approveRoute = '/api/passport/approve-mint';
-            completeRoute = '/api/passport/complete-mint';
+            approveRoute = `${baseUrl}/api/passport/approve-mint`;
+            completeRoute = `${baseUrl}/api/passport/complete-mint`;
         } else if (paymentType === 'merchant_registration') {
-            approveRoute = '/api/merchant/approve-register';
-            completeRoute = '/api/merchant/complete-register';
+            approveRoute = `${baseUrl}/api/merchant/approve-register`;
+            completeRoute = `${baseUrl}/api/merchant/complete-register`;
         }
 
         const callbacks: PiPaymentCallbacks = {
