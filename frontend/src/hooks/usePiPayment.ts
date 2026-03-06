@@ -105,9 +105,11 @@ export function usePiPayment(accessToken?: string) {
                         throw new Error(errData.error || `Server approval failed (${res.status})`);
                     }
                     if (onApproved) await onApproved(pid);
-                } catch (e) {
+                } catch (e: any) {
+                    const msg = e instanceof Error ? e.message : String(e);
                     console.error('[PiPayment] Approval error:', e);
-                    setError(e instanceof Error ? e.message : 'Server approval failed');
+                    alert(`[PiPayment Debug] Backend failed to approve: ${msg}`);
+                    setError(msg);
                     setState('error');
                     throw e;
                 }
@@ -143,9 +145,11 @@ export function usePiPayment(accessToken?: string) {
                     }
                     setState('completed');
                     if (onCompleted) await onCompleted(pid, txid);
-                } catch (e) {
+                } catch (e: any) {
+                    const msg = e instanceof Error ? e.message : String(e);
                     console.error('[PiPayment] Completion error:', e);
-                    setError(e instanceof Error ? e.message : 'Server completion failed');
+                    alert(`[PiPayment Debug] Backend failed to complete: ${msg}`);
+                    setError(msg);
                     setState('error');
                     throw e;
                 }
