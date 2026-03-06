@@ -861,7 +861,8 @@ app.post('/api/passport/approve-mint', piAuthMiddleware, async (req, res) => {
         }
         res.json({ approved: true, message: 'Payment approved. Awaiting blockchain confirmation.' });
     } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Approval failed';
+        if (axios.isAxiosError(err)) { console.error('[Pi API Error] /approve-mint:', err.response?.data || err.message); } else { console.error('[Approve Mint Error]:', err); }
+        const message = axios.isAxiosError(err) ? (err.response?.data?.error?.message || err.message) : (err instanceof Error ? err.message : 'Approval failed');
         res.status(422).json({ error: message });
     }
 });
@@ -917,7 +918,7 @@ app.post('/api/passport/complete-mint', piAuthMiddleware, async (req, res) => {
             message: existing ? 'Passport already active.' : 'PiTrust Passport minted!',
         });
     } catch (err) {
-        console.error('Complete mint error:', err);
+        if (axios.isAxiosError(err)) { console.error('[Pi API Error] /complete-mint:', err.response?.data || err.message); } else { console.error('[Complete Mint Error]:', err); }
         res.status(500).json({ error: 'Failed to complete mint' });
     }
 });
