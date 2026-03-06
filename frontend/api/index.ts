@@ -1,14 +1,14 @@
 /**
- * Vercel Serverless Function — PiTrust API Gateway
- * 
+ * Vercel Serverless Function PiTrust API Gateway
+ *
  * This single function handles ALL /api/* routes by wrapping the
  * existing Express app. Vercel routes /api/[...path] to this file.
- * 
+ *
  * Architecture:
- *   Vercel Frontend (SPA) ─── /api/* ──→ This serverless function
- *                                         └── Express app (same routes as backend/api/src)
- *                                              └── Supabase PostgreSQL
- *                                              └── Pi API (https://api.minepi.com)
+ * Vercel Frontend (SPA) /api/* This serverless function
+ * Express app (same routes as backend/api/src)
+ * Supabase PostgreSQL
+ * Pi API (https://api.minepi.com)
  */
 import express from 'express';
 import helmet from 'helmet';
@@ -19,9 +19,9 @@ import axios from 'axios';
 import { z } from 'zod';
 import * as StellarSdk from 'stellar-sdk';
 
-// ── Database ──────────────────────────────────────────────────────────────────
-// Supabase pooler uses self-signed certs — ssl.rejectUnauthorized must be false.
-// Do NOT append sslmode=require to the URL — it overrides rejectUnauthorized.
+// Database
+// Supabase pooler uses self-signed certs ssl.rejectUnauthorized must be false.
+// Do NOT append sslmode=require to the URL it overrides rejectUnauthorized.
 const dbUrl = process.env.DATABASE_URL || '';
 
 const pool = new Pool({
@@ -46,7 +46,7 @@ async function queryOne<T extends object>(text: string, params?: unknown[]): Pro
     return result.rows[0] ?? null;
 }
 
-// ── Pi API helpers ────────────────────────────────────────────────────────────
+// Pi API helpers
 const PI_API_BASE = process.env.PI_API_BASE || 'https://api.minepi.com';
 const PI_API_KEY = process.env.PI_API_KEY || '';
 
@@ -55,7 +55,7 @@ const piHeaders = () => ({
     'Content-Type': 'application/json',
 });
 
-// ── Pi App Wallet Configuration ────────────────────────────────────────────────
+// Pi App Wallet Configuration
 const PI_APP_WALLET_ADDRESS = process.env.PI_APP_WALLET_ADDRESS || '';
 const PI_APP_WALLET_PRIVATE_SEED = process.env.PI_APP_WALLET_PRIVATE_SEED || '';
 
@@ -145,7 +145,7 @@ async function getPayment(paymentId: string) {
     return response.data;
 }
 
-// ── Pi Auth Middleware ─────────────────────────────────────────────────────────
+// Pi Auth Middleware
 interface PiUser {
     uid: string;
     username: string;
@@ -194,14 +194,14 @@ async function piAuthMiddleware(
     }
 }
 
-// ── Auth Route ────────────────────────────────────────────────────────────────
+// Auth Route
 const authRouter = express.Router();
 authRouter.get('/me', piAuthMiddleware, (req, res) => {
     // Return the verified user object from the Pi Platform API
     res.json(req.piUser);
 });
 
-// ── Express App ───────────────────────────────────────────────────────────────
+// Express App
 const app = express();
 
 app.use(helmet({ contentSecurityPolicy: false }));
@@ -235,7 +235,7 @@ const writeLimiter = rateLimit({
 // Mount the Auth Router
 app.use('/api/auth', authRouter);
 
-// ── Health Route ──────────────────────────────────────────────────────────────
+// Health Route
 app.get('/api/health', async (_req, res) => {
     const masked = dbUrl
         ? dbUrl.replace(/\/\/[^@]+@/, '//***:***@').replace(/\?.+/, '?...')
@@ -259,7 +259,7 @@ app.get('/api/health', async (_req, res) => {
     }
 });
 
-// ── Auth Routes ───────────────────────────────────────────────────────────────
+// Auth Routes
 const SignInSchema = z.object({ accessToken: z.string().min(10) });
 
 app.post('/api/auth/pi-signin', async (req, res) => {
@@ -289,9 +289,9 @@ app.post('/api/auth/pi-signin', async (req, res) => {
     }
 });
 
-// ── Passport Routes ───────────────────────────────────────────────────────────
+// Passport Routes
 
-// POST /api/payments/incomplete (Unauthenticated — used by PiAuthContext onIncompletePaymentFound)
+// POST /api/payments/incomplete (Unauthenticated used by PiAuthContext onIncompletePaymentFound)
 app.post('/api/payments/incomplete', async (req, res) => {
     const { paymentId, txId } = req.body;
     if (!paymentId) {
@@ -349,7 +349,7 @@ app.post('/api/payments/incomplete', async (req, res) => {
     }
 });
 
-// GET /api/passport/:walletOrUid — look up passport by wallet address OR pi_uid
+// GET /api/passport/:walletOrUid look up passport by wallet address OR pi_uid
 app.get('/api/passport/:walletOrUid', async (req, res) => {
     const identifier = req.params.walletOrUid;
     if (!identifier || identifier.length < 3) {
@@ -358,8 +358,7 @@ app.get('/api/passport/:walletOrUid', async (req, res) => {
     }
 
     try {
-        // Try wallet address first, then pi_uid
-        let passport = await queryOne<{
+        const passport = await queryOne<{
             wallet_address: string;
             pi_uid: string;
             score: number;
@@ -372,8 +371,9 @@ app.get('/api/passport/:walletOrUid', async (req, res) => {
         }>(
             `SELECT wallet_address, pi_uid, score, tier, score_frozen,
               completed_trades, disputed_trades, minted_at, last_score_update
-         FROM passports WHERE wallet_address = $1 OR pi_uid = $1
-         LIMIT 1`,
+             FROM passports
+             WHERE wallet_address = $1 OR pi_uid = $1
+             LIMIT 1`,
             [identifier]
         );
 
@@ -382,40 +382,239 @@ app.get('/api/passport/:walletOrUid', async (req, res) => {
             return;
         }
 
-        const red_flags = await query<{
-            flag_type: string;
-            score_impact: number;
-            issued_at: string;
-        }>(
-            `SELECT flag_type, score_impact, issued_at FROM red_flags
-         WHERE wallet_address = $1 ORDER BY issued_at DESC LIMIT 10`,
-            [passport.wallet_address]
-        );
+        const [redFlags, social, vouchStats, disputeStats, receivedVouches, givenVouches, disputes] = await Promise.all([
+            query<{
+                id: string;
+                flag_type: string;
+                score_impact: number;
+                issued_at: string;
+            }>(
+                `SELECT id, flag_type, score_impact, issued_at
+                 FROM red_flags
+                 WHERE wallet_address = $1
+                 ORDER BY issued_at DESC
+                 LIMIT 10`,
+                [passport.wallet_address]
+            ),
+            query<{ id: string; platform: string; attested_at: string }>(
+                `SELECT id, platform, attested_at
+                 FROM social_attestations
+                 WHERE wallet_address = $1 AND active = TRUE
+                 ORDER BY attested_at DESC`,
+                [passport.wallet_address]
+            ),
+            queryOne<{ received: string; given: string; total_received_stake: string; total_given_stake: string }>(
+                `SELECT
+                    (SELECT COUNT(*) FROM vouch_events WHERE vouchee_wallet = $1 AND status = 'active') as received,
+                    (SELECT COUNT(*) FROM vouch_events WHERE voucher_wallet = $1 AND status = 'active') as given,
+                    (SELECT COALESCE(SUM(net_amount_pi), 0) FROM vouch_events WHERE vouchee_wallet = $1 AND status = 'active') as total_received_stake,
+                    (SELECT COALESCE(SUM(net_amount_pi), 0) FROM vouch_events WHERE voucher_wallet = $1 AND status = 'active') as total_given_stake`,
+                [passport.wallet_address]
+            ),
+            queryOne<{ filed: string; opened_against: string; resolved: string }>(
+                `SELECT
+                    (SELECT COUNT(*) FROM disputes WHERE claimant_wallet = $1) as filed,
+                    (SELECT COUNT(*) FROM disputes WHERE defendant_wallet = $1) as opened_against,
+                    (SELECT COUNT(*) FROM disputes WHERE (claimant_wallet = $1 OR defendant_wallet = $1) AND status IN ('convicted', 'exonerated')) as resolved`,
+                [passport.wallet_address]
+            ),
+            query<{ id: string; voucher_wallet: string; net_amount_pi: string; staked_at: string }>(
+                `SELECT id, voucher_wallet, net_amount_pi, staked_at
+                 FROM vouch_events
+                 WHERE vouchee_wallet = $1 AND status = 'active'
+                 ORDER BY staked_at DESC
+                 LIMIT 8`,
+                [passport.wallet_address]
+            ),
+            query<{ id: string; vouchee_wallet: string; net_amount_pi: string; staked_at: string }>(
+                `SELECT id, vouchee_wallet, net_amount_pi, staked_at
+                 FROM vouch_events
+                 WHERE voucher_wallet = $1 AND status = 'active'
+                 ORDER BY staked_at DESC
+                 LIMIT 8`,
+                [passport.wallet_address]
+            ),
+            query<{ id: string; claimant_wallet: string; defendant_wallet: string; status: string; filed_at: string }>(
+                `SELECT id, claimant_wallet, defendant_wallet, status, filed_at
+                 FROM disputes
+                 WHERE claimant_wallet = $1 OR defendant_wallet = $1
+                 ORDER BY filed_at DESC
+                 LIMIT 8`,
+                [passport.wallet_address]
+            )
+        ]);
 
-        const social = await query<{ platform: string; attested_at: string }>(
-            `SELECT platform, attested_at FROM social_attestations
-         WHERE wallet_address = $1 AND active = TRUE`,
-            [passport.wallet_address]
-        );
+        const vouchesReceived = parseInt(vouchStats?.received || '0', 10);
+        const vouchesGiven = parseInt(vouchStats?.given || '0', 10);
+        const socialVerifiedCount = social.length;
+        const redFlagCount = redFlags.length;
+        const disputesFiled = parseInt(disputeStats?.filed || '0', 10);
+        const disputesOpenedAgainst = parseInt(disputeStats?.opened_against || '0', 10);
+        const disputesResolved = parseInt(disputeStats?.resolved || '0', 10);
+        const completedTrades = passport.completed_trades ?? 0;
+        const disputedTrades = passport.disputed_trades ?? 0;
 
-        // Count vouches
-        const vouchStats = await queryOne<{ received: string; given: string }>(
-            `SELECT 
-              (SELECT COUNT(*) FROM vouch_events WHERE vouchee_wallet = $1 AND status = 'active') as received,
-              (SELECT COUNT(*) FROM vouch_events WHERE voucher_wallet = $1 AND status = 'active') as given`,
-            [passport.wallet_address]
+        const pillarOnChain = Math.max(
+            0,
+            Math.min(
+                400,
+                Math.round(
+                    completedTrades * 25 +
+                    Math.min(120, disputesResolved * 18) +
+                    (passport.minted_at ? 80 : 0) -
+                    Math.min(180, disputedTrades * 30)
+                )
+            )
         );
+        const pillarVouch = Math.max(
+            0,
+            Math.min(
+                300,
+                Math.round(
+                    Math.min(180, vouchesReceived * 30) +
+                    Math.min(90, Number(vouchStats?.total_received_stake || 0) * 12) +
+                    Math.min(30, vouchesGiven * 6)
+                )
+            )
+        );
+        const pillarSocial = Math.max(
+            0,
+            Math.min(
+                300,
+                Math.round(
+                    Math.min(180, socialVerifiedCount * 60) +
+                    Math.min(60, disputesFiled * 10)
+                )
+            )
+        );
+        const penalties = redFlags.reduce((total, flag) => total + Math.abs(Number(flag.score_impact || 0)), 0);
+
+        let headline = 'Early-stage passport';
+        let subline = 'Minted and visible, but still building meaningful trust signals.';
+        if (redFlagCount > 0 || passport.score < 100) {
+            headline = 'Trust needs recovery';
+            subline = 'Active warnings are weighing on this passport.';
+        } else if (passport.score >= 900) {
+            headline = 'Network sentinel status';
+            subline = 'Exceptional reputation backed by strong history.';
+        } else if (passport.score >= 700) {
+            headline = 'High-confidence counterparty';
+            subline = 'This passport shows durable, above-average trust signals.';
+        } else if (passport.score >= 500) {
+            headline = 'Trusted for regular commerce';
+            subline = 'Balanced reputation across on-chain, social, and vouch signals.';
+        } else if (passport.score >= 250) {
+            headline = 'Trust is still forming';
+            subline = 'Recent activity is positive, but the history is still thin.';
+        }
+
+        const history = [
+            passport.minted_at
+                ? {
+                    id: `minted-${passport.wallet_address}`,
+                    type: 'passport_minted',
+                    occurred_at: passport.minted_at,
+                    title: 'Passport minted',
+                    detail: 'Trust Passport activated for this wallet.',
+                    impact: 'positive',
+                }
+                : null,
+            ...receivedVouches.map((item) => ({
+                id: `vouch-received-${item.id}`,
+                type: 'vouch_received',
+                occurred_at: item.staked_at,
+                title: 'Stake-backed vouch received',
+                detail: `${item.voucher_wallet} vouched with ${item.net_amount_pi} Pi net stake.`,
+                impact: 'positive',
+            })),
+            ...givenVouches.map((item) => ({
+                id: `vouch-given-${item.id}`,
+                type: 'vouch_given',
+                occurred_at: item.staked_at,
+                title: 'Trust extended to another pioneer',
+                detail: `Vouched for ${item.vouchee_wallet} with ${item.net_amount_pi} Pi net stake.`,
+                impact: 'neutral',
+            })),
+            ...disputes.map((item) => {
+                const filedByPassport = item.claimant_wallet === passport.wallet_address;
+                return {
+                    id: `dispute-${item.id}`,
+                    type: filedByPassport ? 'dispute_filed' : 'dispute_opened_against',
+                    occurred_at: item.filed_at,
+                    title: filedByPassport ? 'Dispute filed' : 'Dispute opened against passport',
+                    detail: filedByPassport
+                        ? `Filed against ${item.defendant_wallet}. Current status: ${item.status}.`
+                        : `Opened by ${item.claimant_wallet}. Current status: ${item.status}.`,
+                    impact: item.status === 'convicted' ? 'warning' : 'neutral',
+                };
+            }),
+            ...redFlags.map((item) => ({
+                id: `flag-${item.id}`,
+                type: 'red_flag_issued',
+                occurred_at: item.issued_at,
+                title: 'Red flag issued',
+                detail: `${item.flag_type} (-${Math.abs(Number(item.score_impact || 0))} score impact).`,
+                impact: 'warning',
+            })),
+            ...social.map((item) => ({
+                id: `social-${item.id}`,
+                type: 'social_verified',
+                occurred_at: item.attested_at,
+                title: `${item.platform} linked`,
+                detail: `${item.platform} attestation is active on this passport.`,
+                impact: 'positive',
+            }))
+        ]
+            .filter((event): event is NonNullable<typeof event> => Boolean(event))
+            .sort((a, b) => new Date(b.occurred_at).getTime() - new Date(a.occurred_at).getTime())
+            .slice(0, 20);
 
         res.json({
             ...passport,
-            red_flags,
+            minted: true,
+            red_flags: redFlags,
             verified_social: social,
-            vouches_received: parseInt(vouchStats?.received || '0'),
-            vouches_given: parseInt(vouchStats?.given || '0'),
-            // Pillar breakdown (estimated from data)
-            pillar_on_chain: Math.min(400, Math.round(passport.score * 0.4)),
-            pillar_vouch: Math.min(300, Math.round(passport.score * 0.3)),
-            pillar_social: Math.min(300, Math.round(passport.score * 0.3)),
+            vouches_received: vouchesReceived,
+            vouches_given: vouchesGiven,
+            pillar_on_chain: pillarOnChain,
+            pillar_vouch: pillarVouch,
+            pillar_social: pillarSocial,
+            trust_summary: {
+                headline,
+                subline,
+                score: passport.score,
+                tier: passport.tier,
+                score_frozen: passport.score_frozen,
+                last_score_update: passport.last_score_update,
+            },
+            score_breakdown: {
+                on_chain: pillarOnChain,
+                vouch: pillarVouch,
+                social: pillarSocial,
+                penalties,
+                total: passport.score,
+            },
+            verification_flags: {
+                pi_authenticated: true,
+                wallet_bound: true,
+                social_verified_count: socialVerifiedCount,
+                has_active_red_flags: redFlagCount > 0,
+            },
+            stats: {
+                completed_trades: completedTrades,
+                disputed_trades: disputedTrades,
+                disputes_filed: disputesFiled,
+                disputes_opened_against: disputesOpenedAgainst,
+                disputes_resolved: disputesResolved,
+                vouches_received: vouchesReceived,
+                vouches_given: vouchesGiven,
+                red_flags: redFlagCount,
+                social_verified: socialVerifiedCount,
+                total_received_stake_pi: Number(vouchStats?.total_received_stake || 0),
+                total_given_stake_pi: Number(vouchStats?.total_given_stake || 0),
+            },
+            history,
+            history_count: history.length,
         });
     } catch (err) {
         console.error('GET /passport error:', err);
@@ -484,7 +683,7 @@ app.post('/api/passport/complete-mint', piAuthMiddleware, async (req, res) => {
             wallet: payment.from_address,
             score: 50,
             tier: 'bronze',
-            message: '🎉 PiTrust Passport minted!',
+            message: 'PiTrust Passport minted!',
         });
     } catch (err) {
         console.error('Complete mint error:', err);
@@ -492,7 +691,7 @@ app.post('/api/passport/complete-mint', piAuthMiddleware, async (req, res) => {
     }
 });
 
-// ── Vouch Routes ──────────────────────────────────────────────────────────────
+// Vouch Routes
 
 app.get('/api/vouch/:wallet', async (req, res) => {
     const { wallet } = req.params;
@@ -562,7 +761,7 @@ app.post('/api/vouch/complete', piAuthMiddleware, async (req, res) => {
     }
 });
 
-// ── Dispute Routes ────────────────────────────────────────────────────────────
+// Dispute Routes
 
 app.get('/api/dispute', async (_req, res) => {
     try {
@@ -645,8 +844,8 @@ app.post('/api/dispute/complete', piAuthMiddleware, writeLimiter, async (req, re
     }
 });
 
-// ── Score Engine (ported from Python FastAPI score_engine/main.py) ─────────────
-// Score = (On-chain 30%) + (Vouch Network 30%) + (Social 20%) + (Governance 20%), scaled to 0–1000
+// Score Engine (ported from Python FastAPI score_engine/main.py)
+// Score = (On-chain 30%) + (Vouch Network 30%) + (Social 20%) + (Governance 20%), scaled to 01000
 
 function scoreTradeCompletion(completed: number, disputed: number): number {
     const total = completed + disputed;
@@ -720,7 +919,7 @@ async function calculateScore(walletAddress: string): Promise<{ score: number; t
     const activityPts = 5; // Placeholder for active users
     const govRaw = Math.min(20, govPts + activityPts);
 
-    // Final score: raw (0-100) → scaled (0-1000)
+    // Final score: raw (0-100) scaled (0-1000)
     const rawTotal = onchainRaw + vouchRaw + socialRaw + govRaw;
     const finalScore = Math.min(1000, Math.max(0, Math.round(rawTotal * 10)));
     const tier = scoreToTier(finalScore);
@@ -733,7 +932,7 @@ async function calculateScore(walletAddress: string): Promise<{ score: number; t
     return { score: finalScore, tier, pillar_on_chain, pillar_vouch, pillar_social };
 }
 
-// ── Score Route ───────────────────────────────────────────────────────────────
+// Score Route
 app.get('/api/score/:wallet', async (req, res) => {
     try {
         const result = await calculateScore(req.params.wallet);
@@ -754,7 +953,7 @@ app.get('/api/score/:wallet', async (req, res) => {
     }
 });
 
-// ── Quests Route (Gamification) ───────────────────────────────────────────────
+// Quests Route (Gamification)
 app.post('/api/quests/complete', piAuthMiddleware, writeLimiter, async (req, res) => {
     const { questId, platform } = req.body;
     const piUser = req.piUser!;
@@ -767,7 +966,7 @@ app.post('/api/quests/complete', piAuthMiddleware, writeLimiter, async (req, res
         }
 
         if (questId === 'social_link' && platform) {
-            // Mock social connect -> Insert real record 
+            // Mock social connect -> Insert real record
             await query(`
                 INSERT INTO social_attestations (wallet_address, platform, platform_uid, credential_hash)
                 VALUES ($1, $2, $3, $4)
@@ -792,7 +991,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// ── Root / Health / Validation ────────────────────────────────────────────────────────
+// Root / Health / Validation
 app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
 app.get('/api', (req, res) => res.json({ message: 'PiTrust API v1 Running on Vercel' }));
 
@@ -806,7 +1005,7 @@ app.get('/validation-key.txt', (req, res) => {
     res.send('4bcb87b8aa6d5f864e36edcefa323ef25130ad02432f0b1607e47bcd2fa65846b3a622367c321571252c91fa4bf175c4271618e73a3cb24e48ea3ddebedb2e00');
 });
 
-// ── Merchant Route ────────────────────────────────────────────────────────────
+// Merchant Route
 app.get('/api/merchant', async (req, res) => {
     const page = parseInt(req.query.page as string || '1');
     const limit = Math.min(parseInt(req.query.limit as string || '20'), 50);
@@ -824,7 +1023,7 @@ app.get('/api/merchant', async (req, res) => {
     res.json({ merchants, page, limit });
 });
 
-// ── Trade Route ───────────────────────────────────────────────────────────────
+// Trade Route
 app.get('/api/trade/:id', async (req, res) => {
     const trade = await queryOne<{
         trade_id: number;
@@ -841,15 +1040,18 @@ app.get('/api/trade/:id', async (req, res) => {
     res.json(trade);
 });
 
-// ── 404 Catch-all ─────────────────────────────────────────────────────────────
+// 404 Catch-all
 app.use((_req, res) => {
     res.status(404).json({ error: 'Route not found' });
 });
 
-// ── Global Error Handler ──────────────────────────────────────────────────────
+// Global Error Handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error('Unhandled error:', err.stack);
     res.status(500).json({ error: 'Internal server error' });
 });
 
 export default app;
+
+
+

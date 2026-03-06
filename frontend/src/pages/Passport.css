@@ -1,5 +1,5 @@
 /* ============================================
-   Passport Page — Premium NFT Card Design
+   Passport Page Premium NFT Card Design
    Tier-differentiated visual system
    ============================================ */
 
@@ -115,7 +115,7 @@
 
 /* === TIER-SPECIFIC BACKGROUNDS === */
 
-/* ── Bronze: Matte copper with grain ── */
+/* Bronze: Matte copper with grain */
 .passport-card.tier-bronze .passport-face {
     background: linear-gradient(145deg, #2a1f14 0%, #3d2b1a 30%, #4a3422 60%, #2a1f14 100%);
     border: 1px solid rgba(205, 127, 50, 0.25);
@@ -131,7 +131,7 @@
     pointer-events: none;
 }
 
-/* ── Silver: Brushed steel with geometric patterns ── */
+/* Silver: Brushed steel with geometric patterns */
 .passport-card.tier-silver .passport-face {
     background: linear-gradient(145deg, #1a1d24 0%, #262b35 30%, #2d3340 60%, #1a1d24 100%);
     border: 1px solid rgba(168, 181, 193, 0.2);
@@ -160,7 +160,7 @@
             rgba(168, 181, 193, 0.02) 31px);
 }
 
-/* ── Gold: Rich gradient with animated shimmer ── */
+/* Gold: Rich gradient with animated shimmer */
 .passport-card.tier-gold .passport-face {
     background: linear-gradient(145deg, #2a2005 0%, #3d3010 30%, #4a3a14 50%, #2a2005 100%);
     border: 1px solid rgba(247, 201, 72, 0.3);
@@ -191,7 +191,7 @@
     }
 }
 
-/* ── Platinum: Aurora glass with prismatic effect ── */
+/* Platinum: Aurora glass with prismatic effect */
 .passport-card.tier-platinum .passport-face {
     background: linear-gradient(145deg, #0d1520 0%, #141e2e 30%, #1a2538 50%, #0d1520 100%);
     border: 1px solid rgba(226, 240, 249, 0.15);
@@ -233,7 +233,7 @@
     }
 }
 
-/* ── Sentinel: Obsidian with electric pulse ── */
+/* Sentinel: Obsidian with electric pulse */
 .passport-card.tier-sentinel .passport-face {
     background: linear-gradient(145deg, #0a0812 0%, #12101e 30%, #1a1530 50%, #0a0812 100%);
     border: 1px solid rgba(155, 127, 245, 0.25);
@@ -1105,5 +1105,258 @@
 @keyframes spin {
     to {
         transform: rotate(360deg);
+    }
+}
+.passport-card__headline {
+    margin: 10px 0 0;
+    max-width: 220px;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.78);
+}
+
+.passport-summary,
+.passport-section-block,
+.quests-section,
+.tier-progression {
+    margin-top: var(--space-4);
+}
+
+.passport-summary {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-5);
+}
+
+.passport-summary__eyebrow {
+    margin: 0 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+.passport-summary__title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: clamp(24px, 5vw, 32px);
+    line-height: 1.05;
+    color: var(--text-primary);
+}
+
+.passport-summary__copy {
+    margin: 10px 0 0;
+    max-width: 34ch;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.trust-signal-grid,
+.score-breakdown-grid,
+.proof-list {
+    display: grid;
+    gap: var(--space-3);
+}
+
+.trust-signal-grid,
+.proof-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: var(--space-4);
+}
+
+.score-breakdown-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trust-signal,
+.score-breakdown-card,
+.proof-item,
+.trust-history {
+    padding: 16px;
+}
+
+.trust-signal {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.trust-signal__label,
+.score-breakdown-card__label,
+.proof-item__label {
+    font-size: 12px;
+    color: var(--text-tertiary);
+}
+
+.trust-signal__value {
+    font-family: var(--font-display);
+    font-size: 20px;
+    color: var(--text-primary);
+}
+
+.trust-signal__value.good {
+    color: #8ce3b1;
+}
+
+.trust-signal__value.danger {
+    color: #ff8f8f;
+}
+
+.trust-signal__value.muted {
+    color: var(--text-secondary);
+}
+
+.score-breakdown-card {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.score-breakdown-card__top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2);
+}
+
+.score-breakdown-card__top strong {
+    font-family: var(--font-display);
+    font-size: 26px;
+    color: var(--text-primary);
+}
+
+.score-breakdown-card__bar {
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+
+.score-breakdown-card__fill {
+    height: 100%;
+    border-radius: inherit;
+}
+
+.score-breakdown-card__copy {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+}
+
+.score-breakdown-card--penalty {
+    background: linear-gradient(180deg, rgba(239, 68, 68, 0.12), rgba(10, 10, 10, 0.28));
+}
+
+.proof-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 92px;
+}
+
+.proof-item strong {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text-primary);
+}
+
+.trust-history {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.trust-history__empty h3 {
+    margin: 0 0 6px;
+    font-family: var(--font-display);
+    color: var(--text-primary);
+}
+
+.trust-history__empty p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.trust-history__item {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.trust-history__item:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.trust-history__tone {
+    width: 10px;
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+
+.trust-history__tone.positive {
+    background: linear-gradient(180deg, #34d399, #10b981);
+}
+
+.trust-history__tone.neutral {
+    background: linear-gradient(180deg, #7dd3fc, #38bdf8);
+}
+
+.trust-history__tone.warning {
+    background: linear-gradient(180deg, #f59e0b, #ef4444);
+}
+
+.trust-history__body {
+    flex: 1;
+}
+
+.trust-history__topline {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+}
+
+.trust-history__topline strong {
+    color: var(--text-primary);
+}
+
+.trust-history__topline span {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    white-space: nowrap;
+}
+
+.trust-history__body p {
+    margin: 0;
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+@media (max-width: 540px) {
+    .passport-summary {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .trust-signal-grid,
+    .score-breakdown-grid,
+    .proof-list {
+        grid-template-columns: 1fr;
+    }
+
+    .trust-history__topline {
+        flex-direction: column;
+        align-items: flex-start;
     }
 }

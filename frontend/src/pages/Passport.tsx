@@ -1,35 +1,26 @@
-/**
- * Passport Page — Premium NFT Card with tier-differentiated visuals
- * 
- * Design concept: Each tier has its own distinct visual identity:
- * Bronze → Matte copper with grain texture
- * Silver → Brushed steel with geometric patterns  
- * Gold → Rich gradient with animated particles
- * Platinum → Aurora glass with prismatic refraction
- * Sentinel → Obsidian with electric pulse effects
- */
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { CSSProperties, MouseEvent } from 'react';
 import { usePassport } from '../hooks/usePassport';
 import { usePiPayment } from '../hooks/usePiPayment';
 import { usePiAuth } from '../context/PiAuthContext';
-import { tierLabel, tierColor, formatWallet, scorePercentage } from '../utils/helpers';
+import { formatPi, formatWallet, scorePercentage, shortTimeAgo, tierColor, tierLabel } from '../utils/helpers';
 import './Passport.css';
 
 const TIER_MOTTOS: Record<string, string> = {
-    bronze: 'Beginning the Journey',
-    silver: 'Earning Trust',
-    gold: 'Proven Trailblazer',
-    platinum: 'Elite Vanguard',
-    sentinel: 'Guardian of the Network',
+    bronze: 'Beginning the journey',
+    silver: 'Earning trust',
+    gold: 'Proven trailblazer',
+    platinum: 'Elite counterparty',
+    sentinel: 'Guardian of the network',
 };
 
-const TIER_ICONS: Record<string, string> = {
-    bronze: '🛡️',
-    silver: '⚔️',
-    gold: '⭐',
-    platinum: '💎',
-    sentinel: '👁️',
-};
+const SCORE_THRESHOLDS = [0, 250, 500, 700, 900];
+
+function historyToneClass(impact?: 'positive' | 'neutral' | 'warning') {
+    if (impact === 'positive') return 'trust-history__tone positive';
+    if (impact === 'warning') return 'trust-history__tone warning';
+    return 'trust-history__tone neutral';
+}
 
 export function Passport() {
     const { user, loading: authLoading, accessToken } = usePiAuth();
@@ -40,7 +31,6 @@ export function Passport() {
     const [isFlipped, setIsFlipped] = useState(false);
     const [questing, setQuesting] = useState(false);
 
-    // Gyroscope tilt for the 3D card
     useEffect(() => {
         const handleOrientation = (e: DeviceOrientationEvent) => {
             const x = Math.min(15, Math.max(-15, (e.gamma ?? 0) * 0.4));
@@ -51,8 +41,7 @@ export function Passport() {
         return () => window.removeEventListener('deviceorientation', handleOrientation);
     }, []);
 
-    // Mouse tilt for desktop
-    const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
         if (isFlipped) return;
         const rect = e.currentTarget.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
@@ -73,12 +62,11 @@ export function Passport() {
     };
 
     const handleShare = () => {
-        if (window.Pi && passport) {
-            window.Pi.openShareDialog(
-                '🛡️ My PiTrust Passport',
-                `I'm a ${tierLabel(passport.tier)} on PiTrust with a score of ${passport.score}/1000! 🚀\n\nMint yours at trustpi.space`
-            );
-        }
+        if (!window.Pi || !passport) return;
+        window.Pi.openShareDialog(
+            'My PiTrust Passport',
+            `I am ${tierLabel(passport.tier)} on PiTrust with a score of ${passport.score}/1000. Check trust before you trade at trustpi.space`
+        );
     };
 
     const completeQuest = async (questId: string, platform: string) => {
@@ -89,60 +77,111 @@ export function Passport() {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${accessToken}`
+                    Authorization: `Bearer ${accessToken}`,
                 },
-                body: JSON.stringify({ questId, platform })
+                body: JSON.stringify({ questId, platform }),
             });
             if (res.ok) {
-                alert(`${platform} connected successfully! Your score will update soon.`);
+                alert(`${platform} connected successfully. Your score will update soon.`);
                 await refetch();
             } else {
                 const data = await res.json();
                 alert(`Error: ${data.error}`);
             }
-        } catch (err) {
+        } catch {
             alert('Failed to complete quest');
         } finally {
             setQuesting(false);
         }
     };
 
-    // Loading state
-    if (authLoading || passportLoading) return (
-        <div className="passport-page">
-            <div className="passport-loading">
-                <div className="passport-loading__spinner" />
-                <p className="passport-loading__text">Loading your Passport...</p>
+    if (authLoading || passportLoading) {
+        return (
+            <div className="passport-page">
+                <div className="passport-loading">
+                    <div className="passport-loading__spinner" />
+                    <p className="passport-loading__text">Loading your Passport...</p>
+                </div>
             </div>
-        </div>
-    );
+        );
+    }
 
-    // Error state
-    if (passportError && !passport) return (
-        <div className="passport-page">
-            <div className="passport-error frost-card">
-                <div className="passport-error__icon">⚠️</div>
-                <h2>Could not load Passport</h2>
-                <p>{passportError}</p>
-                <button className="btn btn-primary" onClick={refetch}>Retry</button>
+    if (passportError && !passport) {
+        return (
+            <div className="passport-page">
+                <div className="passport-error frost-card">
+                    <div className="passport-error__icon">!</div>
+                    <h2>Could not load Passport</h2>
+                    <p>{passportError}</p>
+                    <button className="btn btn-primary" onClick={refetch}>Retry</button>
+                </div>
             </div>
-        </div>
-    );
+        );
+    }
 
     if (!passport) return null;
 
     const cardColor = tierColor(passport.tier);
-    const mintDate = passport.minted_at ? new Date(passport.minted_at).toLocaleDateString('en-US', {
-        month: 'short', year: 'numeric'
-    }) : null;
+    const mintDate = passport.minted_at
+        ? new Date(passport.minted_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+        : null;
+    const scoreRingStyle = {
+        '--ring-progress': `${scorePercentage(passport.score)}%`,
+        '--ring-color': cardColor,
+    } as CSSProperties;
+
+    const trustSignals = [
+        {
+            label: 'Pi authenticated',
+            value: passport.verification_flags.pi_authenticated ? 'Verified' : 'Pending',
+            emphasis: passport.verification_flags.pi_authenticated ? 'good' : 'muted',
+        },
+        {
+            label: 'Wallet bound',
+            value: passport.verification_flags.wallet_bound ? 'Bound' : 'Pending',
+            emphasis: passport.verification_flags.wallet_bound ? 'good' : 'muted',
+        },
+        {
+            label: 'Verified socials',
+            value: `${passport.verification_flags.social_verified_count}`,
+            emphasis: passport.verification_flags.social_verified_count > 0 ? 'good' : 'muted',
+        },
+        {
+            label: 'Active warnings',
+            value: `${passport.red_flags.length}`,
+            emphasis: passport.red_flags.length > 0 ? 'danger' : 'good',
+        },
+    ];
+
+    const scorePillars = [
+        {
+            key: 'on-chain',
+            label: 'On-chain behavior',
+            value: passport.score_breakdown.on_chain,
+            max: 400,
+            copy: `${passport.stats.completed_trades} completed trades, ${passport.stats.disputes_resolved} resolved disputes, ${passport.stats.disputed_trades} disputed trades.`,
+        },
+        {
+            key: 'vouch',
+            label: 'Stake-backed vouches',
+            value: passport.score_breakdown.vouch,
+            max: 300,
+            copy: `${passport.vouches_received} received and ${passport.vouches_given} given, backed by ${formatPi(passport.stats.total_received_stake_pi)} received stake.`,
+        },
+        {
+            key: 'social',
+            label: 'Verified proofs',
+            value: passport.score_breakdown.social,
+            max: 300,
+            copy: `${passport.verified_social.length} verified social attestations currently linked to this passport.`,
+        },
+    ];
 
     return (
         <div className="passport-page stagger">
-
-            {/* === Premium 3D Passport Card === */}
             <div className="passport-card-section animate-fade-up">
                 <p className="passport-section-label">
-                    {passport.minted ? '✦ Your Soulbound Passport' : '✦ Mint Your Identity'}
+                    {passport.minted ? 'Your Trust Passport' : 'Mint Your Trust Passport'}
                 </p>
 
                 <div
@@ -158,77 +197,59 @@ export function Passport() {
                             transform: `perspective(800px) rotateX(${isFlipped ? 180 : tilt.y}deg) rotateY(${isFlipped ? 0 : tilt.x}deg)`,
                         }}
                     >
-                        {/* ── FRONT FACE ── */}
                         <div className="passport-face passport-front">
-                            {/* Tier-specific background effects */}
                             <div className="passport-bg-effect" />
-
-                            {/* Holographic foil overlay */}
                             <div
                                 className="holo-foil"
-                                style={{
-                                    backgroundPosition: `${50 + tilt.x * 3}% ${50 + tilt.y * 3}%`,
-                                }}
+                                style={{ backgroundPosition: `${50 + tilt.x * 3}% ${50 + tilt.y * 3}%` }}
                             />
-
-                            {/* Scan line for Sentinel tier */}
                             {passport.tier === 'sentinel' && <div className="scan-line" />}
 
-                            {/* Card header */}
                             <div className="passport-card__header">
                                 <div className="passport-card__brand">
-                                    <span className="pi-emblem">π</span>
+                                    <span className="pi-emblem">PI</span>
                                     <span className="brand-text">PiTrust</span>
                                 </div>
                                 <div className="passport-card__type">
-                                    {passport.minted ? 'SOULBOUND TOKEN' : 'NOT MINTED'}
+                                    {passport.minted ? 'TRUST PASSPORT' : 'NOT MINTED'}
                                 </div>
                             </div>
 
-                            {/* Center score display */}
                             <div className="passport-card__score-block">
-                                <div className="score-ring" style={{ '--ring-progress': `${scorePercentage(passport.score)}%`, '--ring-color': cardColor } as any}>
+                                <div className="score-ring" style={scoreRingStyle}>
                                     <span className="score-ring__value">{passport.score}</span>
                                     <span className="score-ring__max">/1000</span>
                                 </div>
                                 <div className="passport-card__tier-info">
-                                    <span className="tier-icon">{TIER_ICONS[passport.tier]}</span>
                                     <span className="tier-name" style={{ color: cardColor }}>
                                         {tierLabel(passport.tier)}
                                     </span>
                                     <span className="tier-motto">{TIER_MOTTOS[passport.tier]}</span>
+                                    <p className="passport-card__headline">{passport.trust_summary.headline}</p>
                                 </div>
                             </div>
 
-                            {/* Score pillars mini-bars */}
                             <div className="passport-card__pillars">
-                                <div className="pillar-mini">
-                                    <span className="pillar-mini__label">On-Chain</span>
-                                    <div className="pillar-mini__bar">
-                                        <div className="pillar-mini__fill" style={{ width: `${Math.min(100, (passport.pillar_on_chain / 400) * 100)}%`, background: cardColor }} />
+                                {scorePillars.map((pillar) => (
+                                    <div key={pillar.key} className="pillar-mini">
+                                        <span className="pillar-mini__label">{pillar.label}</span>
+                                        <div className="pillar-mini__bar">
+                                            <div
+                                                className="pillar-mini__fill"
+                                                style={{
+                                                    width: `${Math.min(100, (pillar.value / pillar.max) * 100)}%`,
+                                                    background: cardColor,
+                                                }}
+                                            />
+                                        </div>
+                                        <span className="pillar-mini__value">{pillar.value}</span>
                                     </div>
-                                    <span className="pillar-mini__value">{passport.pillar_on_chain}</span>
-                                </div>
-                                <div className="pillar-mini">
-                                    <span className="pillar-mini__label">Vouch</span>
-                                    <div className="pillar-mini__bar">
-                                        <div className="pillar-mini__fill" style={{ width: `${Math.min(100, (passport.pillar_vouch / 300) * 100)}%`, background: cardColor }} />
-                                    </div>
-                                    <span className="pillar-mini__value">{passport.pillar_vouch}</span>
-                                </div>
-                                <div className="pillar-mini">
-                                    <span className="pillar-mini__label">Social</span>
-                                    <div className="pillar-mini__bar">
-                                        <div className="pillar-mini__fill" style={{ width: `${Math.min(100, (passport.pillar_social / 300) * 100)}%`, background: cardColor }} />
-                                    </div>
-                                    <span className="pillar-mini__value">{passport.pillar_social}</span>
-                                </div>
+                                ))}
                             </div>
 
-                            {/* Footer */}
                             <div className="passport-card__footer">
                                 <div className="passport-card__identity">
-                                    <div className="passport-card__username">@{user?.username}</div>
+                                    <div className="passport-card__username">@{user?.username || 'pioneer'}</div>
                                     <div className="passport-card__wallet">{formatWallet(passport.wallet_address)}</div>
                                 </div>
                                 <div className="passport-card__meta">
@@ -238,30 +259,33 @@ export function Passport() {
                             </div>
                         </div>
 
-                        {/* ── BACK FACE ── */}
                         <div className="passport-face passport-back">
                             <div className="passport-bg-effect" />
                             <div className="passport-back__content">
                                 <div className="passport-back__logo">
-                                    <span className="pi-emblem-large">π</span>
+                                    <span className="pi-emblem-large">PI</span>
                                     <span>PiTrust Network</span>
                                 </div>
                                 <div className="passport-back__metadata">
                                     <div className="back-meta-item">
-                                        <span className="back-meta__label">Security Clearance</span>
-                                        <span className="back-meta__value" style={{ color: passport.red_flags.length ? '#ef4444' : '#10b981' }}>{passport.red_flags.length ? 'FLAGGED' : 'CLEAN'}</span>
+                                        <span className="back-meta__label">Trust headline</span>
+                                        <span className="back-meta__value">{passport.trust_summary.headline}</span>
                                     </div>
                                     <div className="back-meta-item">
-                                        <span className="back-meta__label">Oracle Signature</span>
-                                        <span className="back-meta__value sig-hash">0x{passport.wallet_address.slice(1, 9)}...{user?.uid?.slice(0, 6)}...</span>
+                                        <span className="back-meta__label">Warnings</span>
+                                        <span className="back-meta__value" style={{ color: passport.red_flags.length ? '#ef4444' : '#10b981' }}>
+                                            {passport.red_flags.length ? `${passport.red_flags.length} active` : 'No active flags'}
+                                        </span>
                                     </div>
                                     <div className="back-meta-item">
-                                        <span className="back-meta__label">Issue Authority</span>
-                                        <span className="back-meta__value">Decentralized Trust Protocol</span>
+                                        <span className="back-meta__label">Verified proofs</span>
+                                        <span className="back-meta__value">{passport.verified_social.length} linked</span>
                                     </div>
                                     <div className="back-meta-item">
-                                        <span className="back-meta__label">Account Age</span>
-                                        <span className="back-meta__value">Network Verified Pioneer</span>
+                                        <span className="back-meta__label">Last score refresh</span>
+                                        <span className="back-meta__value">
+                                            {passport.last_score_update ? shortTimeAgo(passport.last_score_update) : 'Awaiting refresh'}
+                                        </span>
                                     </div>
                                 </div>
                                 <div className="passport-back__stats">
@@ -270,89 +294,81 @@ export function Passport() {
                                         <span className="back-stat__label">Endorsed By</span>
                                     </div>
                                     <div className="back-stat">
-                                        <span className="back-stat__value">{passport.vouches_given}</span>
-                                        <span className="back-stat__label">Vouches Given</span>
+                                        <span className="back-stat__value">{passport.stats.completed_trades}</span>
+                                        <span className="back-stat__label">Completed Trades</span>
                                     </div>
                                 </div>
                                 <p className="passport-back__disclaimer">
-                                    This Soulbound Token is non-transferable and anchored to the Stellar Soroban Network.
-                                    It represents the immutable trust identity of its holder in the Pi ecosystem.
+                                    This passport summarizes portable trust signals for Pi commerce. Use it to decide who to trust before you trade.
                                 </p>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {passport.minted && (
-                    <p className="card-hint animate-fade-up">Tap the card to flip</p>
-                )}
+                {passport.minted && <p className="card-hint animate-fade-up">Tap the card to flip</p>}
             </div>
 
-            {/* === Mint / Status section === */}
             {!passport.minted ? (
                 <div className="mint-section frost-card animate-fade-up">
                     <div className="mint-header">
-                        <div className="mint-badge">NEW</div>
-                        <h2 className="mint-title">Claim Your Digital Identity</h2>
+                        <div className="mint-badge">LIVE</div>
+                        <h2 className="mint-title">Mint your commerce-trust passport</h2>
                     </div>
                     <p className="mint-description">
-                        Your Soulbound Token is a permanent, non-transferable identity on Pi Network.
-                        It anchors your trust score, vouches, and social credentials on-chain forever.
-                        This is your passport to the trustless economy.
+                        Pay 1 Pi once to activate your public trust card. Minting unlocks a readable score, stake-backed vouches, dispute eligibility, and a passport you can share before you trade.
                     </p>
 
                     <div className="mint-benefits">
                         <div className="mint-benefit">
-                            <span className="mint-benefit__icon">🔐</span>
+                            <span className="mint-benefit__icon">01</span>
                             <div>
-                                <strong>Immutable Identity</strong>
-                                <p>On-chain proof of your reputation</p>
+                                <strong>Public trust card</strong>
+                                <p>Show score, tier, proofs, and trust history in one place.</p>
                             </div>
                         </div>
                         <div className="mint-benefit">
-                            <span className="mint-benefit__icon">📈</span>
+                            <span className="mint-benefit__icon">02</span>
                             <div>
-                                <strong>Score Growth</strong>
-                                <p>Build your trust score over time</p>
+                                <strong>Stake-backed vouches</strong>
+                                <p>Give and receive social proof that carries economic weight.</p>
                             </div>
                         </div>
                         <div className="mint-benefit">
-                            <span className="mint-benefit__icon">🤝</span>
+                            <span className="mint-benefit__icon">03</span>
                             <div>
-                                <strong>Vouch Network</strong>
-                                <p>Receive and give trust endorsements</p>
+                                <strong>Dispute-ready identity</strong>
+                                <p>Build a trade history others can inspect before paying you.</p>
                             </div>
                         </div>
                     </div>
 
                     <div className="mint-details">
                         <div className="mint-detail-row">
-                            <span>Mint Fee</span>
-                            <strong>1 π</strong>
+                            <span>Mint fee</span>
+                            <strong>1 Pi</strong>
                         </div>
                         <div className="mint-detail-row">
-                            <span>Token Type</span>
-                            <strong>Soulbound (Non-transferable)</strong>
+                            <span>Unlocks</span>
+                            <strong>Passport, score, vouches, disputes</strong>
                         </div>
                         <div className="mint-detail-row">
-                            <span>Network</span>
-                            <strong>Stellar / Soroban</strong>
+                            <span>Starting tier</span>
+                            <strong>Bronze Pioneer</strong>
                         </div>
                         <div className="mint-detail-row">
-                            <span>Starting Tier</span>
-                            <strong>🛡️ Bronze Pioneer</strong>
+                            <span>Primary use</span>
+                            <strong>Trust before commerce</strong>
                         </div>
                     </div>
 
-                    {payError && (
-                        <div className="mint-error badge badge-danger">{payError}</div>
-                    )}
+                    {payError && <div className="mint-error badge badge-danger">{payError}</div>}
 
                     {payState === 'completed' ? (
                         <div className="mint-success">
-                            <div className="success-check">✓</div>
-                            <h3>Passport Minted!</h3>
-                            <p>Welcome to the PiTrust network. Your trust journey begins now.</p>
+                            <div className="success-check">OK</div>
+                            <h3>Passport minted</h3>
+                            <p>Your trust card is now live. Start building history and linking proofs.</p>
                         </div>
                     ) : (
                         <button
@@ -360,59 +376,118 @@ export function Passport() {
                             onClick={handleMint}
                             disabled={payState === 'awaiting_approval' || payState === 'processing'}
                         >
-                            {payState === 'awaiting_approval' && '⏳ Waiting for approval...'}
-                            {payState === 'processing' && '⛓️ Minting on-chain...'}
-                            {(payState === 'idle' || payState === 'cancelled' || payState === 'error') && '✦ Mint Passport — 1 π'}
+                            {payState === 'awaiting_approval' && 'Waiting for approval...'}
+                            {payState === 'processing' && 'Minting passport...'}
+                            {(payState === 'idle' || payState === 'cancelled' || payState === 'error') && 'Mint Passport - 1 Pi'}
                         </button>
                     )}
                 </div>
             ) : (
                 <>
-                    {/* Passport Status section for minted users */}
-                    <div className="passport-stats-section animate-fade-up">
-                        <h2 className="section-title">Passport Status</h2>
-                        <div className="passport-stat-list">
-                            <div className="passport-stat-item frost-card">
-                                <span className="pstat-label">Red Flags</span>
-                                <span className={`pstat-value ${passport.red_flags.length > 0 ? 'badge badge-danger' : 'badge badge-success'}`}>
-                                    {passport.red_flags.length > 0 ? `${passport.red_flags.length} active` : 'Clean ✓'}
-                                </span>
-                            </div>
-                            <div className="passport-stat-item frost-card">
-                                <span className="pstat-label">Score Status</span>
-                                <span className={`pstat-value badge ${passport.score_frozen ? 'badge-warning' : 'badge-success'}`}>
-                                    {passport.score_frozen ? '⚠️ Frozen' : '✓ Active'}
-                                </span>
-                            </div>
-                            <div className="passport-stat-item frost-card">
-                                <span className="pstat-label">Network</span>
-                                <span className="pstat-value badge badge-ghost">Stellar</span>
-                            </div>
+                    <div className="passport-summary frost-card animate-fade-up">
+                        <div>
+                            <p className="passport-summary__eyebrow">Trust summary</p>
+                            <h2 className="passport-summary__title">{passport.trust_summary.headline}</h2>
+                            <p className="passport-summary__copy">{passport.trust_summary.subline}</p>
                         </div>
-
-                        {/* Share button */}
-                        <button className="btn btn-primary w-full share-btn" onClick={handleShare}>
-                            📤 Share Passport
-                        </button>
-
-                        {passport.red_flags.length > 0 && (
-                            <div className="recovery-prompt frost-card">
-                                <h3>💊 Rehabilitation Available</h3>
-                                <p>Lock 50 π for 12 months to begin score recovery. Your commitment is your reputation.</p>
-                                <button className="btn btn-primary" style={{ marginTop: '12px' }}>
-                                    Enter Recovery — 50 π
-                                </button>
-                            </div>
-                        )}
+                        <button className="btn btn-primary share-btn" onClick={handleShare}>Share Passport</button>
                     </div>
 
-                    {/* Tier Progression section */}
+                    <div className="trust-signal-grid animate-fade-up">
+                        {trustSignals.map((signal) => (
+                            <div key={signal.label} className="trust-signal frost-card">
+                                <span className="trust-signal__label">{signal.label}</span>
+                                <span className={`trust-signal__value ${signal.emphasis}`}>{signal.value}</span>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="passport-section-block animate-fade-up">
+                        <h2 className="section-title">Why this score</h2>
+                        <div className="score-breakdown-grid">
+                            {scorePillars.map((pillar) => (
+                                <div key={pillar.key} className="score-breakdown-card frost-card">
+                                    <div className="score-breakdown-card__top">
+                                        <span className="score-breakdown-card__label">{pillar.label}</span>
+                                        <strong>{pillar.value}</strong>
+                                    </div>
+                                    <div className="score-breakdown-card__bar">
+                                        <div
+                                            className="score-breakdown-card__fill"
+                                            style={{ width: `${Math.min(100, (pillar.value / pillar.max) * 100)}%`, background: cardColor }}
+                                        />
+                                    </div>
+                                    <p className="score-breakdown-card__copy">{pillar.copy}</p>
+                                </div>
+                            ))}
+                            <div className="score-breakdown-card frost-card score-breakdown-card--penalty">
+                                <div className="score-breakdown-card__top">
+                                    <span className="score-breakdown-card__label">Penalty drag</span>
+                                    <strong>{passport.score_breakdown.penalties}</strong>
+                                </div>
+                                <p className="score-breakdown-card__copy">
+                                    Active flags reduce trust and should remain visible. Score clarity matters more than flattering numbers.
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="passport-section-block animate-fade-up">
+                        <h2 className="section-title">Verified proofs</h2>
+                        <div className="proof-list">
+                            <div className="proof-item frost-card">
+                                <span className="proof-item__label">Pi authentication</span>
+                                <strong>{passport.verification_flags.pi_authenticated ? 'Verified' : 'Pending'}</strong>
+                            </div>
+                            <div className="proof-item frost-card">
+                                <span className="proof-item__label">Wallet continuity</span>
+                                <strong>{passport.verification_flags.wallet_bound ? formatWallet(passport.wallet_address) : 'Pending'}</strong>
+                            </div>
+                            <div className="proof-item frost-card">
+                                <span className="proof-item__label">Verified socials</span>
+                                <strong>
+                                    {passport.verified_social.length > 0
+                                        ? passport.verified_social.map((item) => item.platform).join(', ')
+                                        : 'None linked yet'}
+                                </strong>
+                            </div>
+                            <div className="proof-item frost-card">
+                                <span className="proof-item__label">Vouch stake received</span>
+                                <strong>{formatPi(passport.stats.total_received_stake_pi)}</strong>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="passport-section-block animate-fade-up">
+                        <h2 className="section-title">Trust history</h2>
+                        <div className="trust-history frost-card">
+                            {passport.history.length === 0 ? (
+                                <div className="trust-history__empty">
+                                    <h3>No trust events yet</h3>
+                                    <p>Minted passports become more useful as vouches, verified proofs, and trade outcomes accumulate.</p>
+                                </div>
+                            ) : (
+                                passport.history.map((event) => (
+                                    <div key={event.id} className="trust-history__item">
+                                        <div className={historyToneClass(event.impact)} />
+                                        <div className="trust-history__body">
+                                            <div className="trust-history__topline">
+                                                <strong>{event.title}</strong>
+                                                <span>{shortTimeAgo(event.occurred_at)}</span>
+                                            </div>
+                                            <p>{event.detail}</p>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
                     <div className="tier-progression animate-fade-up">
-                        <h2 className="section-title">Tier Progression</h2>
+                        <h2 className="section-title">Tier progression</h2>
                         <div className="tier-track">
-                            {(['bronze', 'silver', 'gold', 'platinum', 'sentinel'] as const).map((tier, i) => {
-                                const thresholds = [0, 250, 500, 700, 900];
-                                const isActive = passport.score >= thresholds[i];
+                            {(['bronze', 'silver', 'gold', 'platinum', 'sentinel'] as const).map((tier, index) => {
+                                const isActive = passport.score >= SCORE_THRESHOLDS[index];
                                 const isCurrent = passport.tier === tier;
                                 return (
                                     <div key={tier} className={`tier-track__item ${isActive ? 'reached' : ''} ${isCurrent ? 'current' : ''}`}>
@@ -420,39 +495,35 @@ export function Passport() {
                                             {isCurrent && <div className="tier-track__pulse" />}
                                         </div>
                                         <span className="tier-track__label">{tier.charAt(0).toUpperCase() + tier.slice(1)}</span>
-                                        <span className="tier-track__threshold">{thresholds[i]}</span>
+                                        <span className="tier-track__threshold">{SCORE_THRESHOLDS[index]}</span>
                                     </div>
                                 );
                             })}
                             <div className="tier-track__line">
-                                <div
-                                    className="tier-track__progress"
-                                    style={{ width: `${scorePercentage(passport.score)}%` }}
-                                />
+                                <div className="tier-track__progress" style={{ width: `${scorePercentage(passport.score)}%` }} />
                             </div>
                         </div>
                     </div>
 
-                    {/* Gamified Quests section */}
                     <div className="quests-section animate-fade-up">
-                        <h2 className="section-title" style={{ marginTop: '0' }}>Trust Quests</h2>
+                        <h2 className="section-title" style={{ marginTop: '0' }}>Trust quests</h2>
                         <div className="quest-list">
                             <div className="quest-card frost-card">
                                 <div className="quest-info">
-                                    <span className="quest-icon">𝕏</span>
+                                    <span className="quest-icon">X</span>
                                     <div>
-                                        <strong>Link X (Twitter)</strong>
-                                        <p>+50 Score points • Identity Anchor</p>
+                                        <strong>Link X</strong>
+                                        <p>Add a visible identity anchor and improve your proof set.</p>
                                     </div>
                                 </div>
                                 <button className="btn btn-primary btn-sm" onClick={() => completeQuest('social_link', 'Twitter')} disabled={questing}>Connect</button>
                             </div>
                             <div className="quest-card frost-card">
                                 <div className="quest-info">
-                                    <span className="quest-icon">💬</span>
+                                    <span className="quest-icon">TG</span>
                                     <div>
                                         <strong>Link Telegram</strong>
-                                        <p>+50 Score points • Identity Anchor</p>
+                                        <p>Give buyers and counterparties more confidence in your continuity.</p>
                                     </div>
                                 </div>
                                 <button className="btn btn-primary btn-sm" onClick={() => completeQuest('social_link', 'Telegram')} disabled={questing}>Connect</button>

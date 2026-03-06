@@ -1,15 +1,8 @@
 /**
- * usePassport — fetches passport data for the authenticated user.
+ * usePassport fetches passport data for the authenticated user.
  *
- * IMPORTANT: On Vercel (static SPA deployment), /api/* routes return HTML (index.html)
- * because the backend is not deployed on Vercel. We must check Content-Type
- * before parsing JSON to avoid "not valid JSON" errors.
- * 
- * Flow:
- *  1. Wait for user auth to resolve
- *  2. Try to fetch from the real API
- *  3. If API returns HTML or is unreachable → show unminted state (not mock data)
- *  4. Only use mock data when VITE_DEV_MODE=true
+ * On Vercel SPA deployments, /api/* can return HTML when the backend is not
+ * available. Guard JSON parsing and fall back to an unminted passport shape.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { usePiAuth } from '../context/PiAuthContext';
@@ -17,6 +10,66 @@ import type { Tier } from '../utils/helpers';
 import { scoreToTier } from '../utils/helpers';
 
 const EXPLICIT_DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true';
+
+export interface RedFlag {
+    id: string;
+    flag_type: string;
+    score_impact: number;
+    issued_at: string;
+}
+
+export interface SocialAttestation {
+    id: string;
+    platform: string;
+    attested_at: string;
+}
+
+export interface PassportHistoryEvent {
+    id: string;
+    type: string;
+    occurred_at: string;
+    title: string;
+    detail: string;
+    impact?: 'positive' | 'neutral' | 'warning';
+}
+
+export interface TrustSummary {
+    headline: string;
+    subline: string;
+    score: number;
+    tier: Tier;
+    score_frozen: boolean;
+    last_score_update?: string;
+}
+
+export interface ScoreBreakdown {
+    on_chain: number;
+    vouch: number;
+    social: number;
+    penalties: number;
+    total: number;
+}
+
+export interface VerificationFlags {
+    pi_authenticated: boolean;
+    wallet_bound: boolean;
+    social_verified_count: number;
+    has_active_red_flags: boolean;
+}
+
+export interface PassportStats {
+    completed_trades: number;
+    disputed_trades: number;
+    disputes_filed: number;
+    disputes_opened_against: number;
+    disputes_resolved: number;
+    vouches_received: number;
+    vouches_given: number;
+    red_flags: number;
+    social_verified: number;
+    total_received_stake_pi: number;
+    total_given_stake_pi: number;
+}
 
 export interface PassportData {
     wallet_address: string;
@@ -29,16 +82,17 @@ export interface PassportData {
     pillar_vouch: number;
     pillar_social: number;
     red_flags: RedFlag[];
+    verified_social: SocialAttestation[];
     vouches_received: number;
     vouches_given: number;
     minted_at?: string;
-}
-
-export interface RedFlag {
-    id: string;
-    flag_type: string;
-    score_impact: number;
-    issued_at: string;
+    last_score_update?: string;
+    trust_summary: TrustSummary;
+    score_breakdown: ScoreBreakdown;
+    verification_flags: VerificationFlags;
+    stats: PassportStats;
+    history: PassportHistoryEvent[];
+    history_count: number;
 }
 
 const DEV_MOCK_PASSPORT: PassportData = {
@@ -52,16 +106,60 @@ const DEV_MOCK_PASSPORT: PassportData = {
     pillar_vouch: 95,
     pillar_social: 45,
     red_flags: [],
+    verified_social: [
+        { id: 'social-dev-x', platform: 'X', attested_at: new Date().toISOString() },
+    ],
     vouches_received: 3,
     vouches_given: 2,
     minted_at: new Date().toISOString(),
+    last_score_update: new Date().toISOString(),
+    trust_summary: {
+        headline: 'Trusted for regular commerce',
+        subline: 'Balanced reputation across on-chain, social, and vouch signals.',
+        score: 320,
+        tier: 'silver',
+        score_frozen: false,
+        last_score_update: new Date().toISOString(),
+    },
+    score_breakdown: {
+        on_chain: 180,
+        vouch: 95,
+        social: 45,
+        penalties: 0,
+        total: 320,
+    },
+    verification_flags: {
+        pi_authenticated: true,
+        wallet_bound: true,
+        social_verified_count: 1,
+        has_active_red_flags: false,
+    },
+    stats: {
+        completed_trades: 4,
+        disputed_trades: 0,
+        disputes_filed: 0,
+        disputes_opened_against: 0,
+        disputes_resolved: 0,
+        vouches_received: 3,
+        vouches_given: 2,
+        red_flags: 0,
+        social_verified: 1,
+        total_received_stake_pi: 8.5,
+        total_given_stake_pi: 2,
+    },
+    history: [
+        {
+            id: 'minted-dev',
+            type: 'passport_minted',
+            occurred_at: new Date().toISOString(),
+            title: 'Passport minted',
+            detail: 'Trust Passport activated for this wallet.',
+            impact: 'positive',
+        },
+    ],
+    history_count: 1,
 };
 
-/**
- * Safely parse a response as JSON. Returns null if the response
- * is HTML or otherwise not valid JSON (common on Vercel SPA deployments
- * where /api/* routes return index.html).
- */
 async function safeJsonParse(res: Response): Promise<any | null> {
     const contentType = res.headers.get('content-type') || '';
     if (!contentType.includes('application/json')) {
@@ -76,6 +174,125 @@ async function safeJsonParse(res: Response): Promise<any | null> {
     }
 }
 
+function buildUnmintedPassport(walletOrUid: string, piUid: string): PassportData {
+    return {
+        wallet_address: walletOrUid,
+        pi_uid: piUid,
+        minted: false,
+        score: 0,
+        tier: 'bronze',
+        score_frozen: false,
+        pillar_on_chain: 0,
+        pillar_vouch: 0,
+        pillar_social: 0,
+        red_flags: [],
+        verified_social: [],
+        vouches_received: 0,
+        vouches_given: 0,
+        trust_summary: {
+            headline: 'Mint your trust passport',
+            subline: 'Unlock your public trust card, vouches, and dispute-ready identity.',
+            score: 0,
+            tier: 'bronze',
+            score_frozen: false,
+        },
+        score_breakdown: {
+            on_chain: 0,
+            vouch: 0,
+            social: 0,
+            penalties: 0,
+            total: 0,
+        },
+        verification_flags: {
+            pi_authenticated: true,
+            wallet_bound: !!walletOrUid,
+            social_verified_count: 0,
+            has_active_red_flags: false,
+        },
+        stats: {
+            completed_trades: 0,
+            disputed_trades: 0,
+            disputes_filed: 0,
+            disputes_opened_against: 0,
+            disputes_resolved: 0,
+            vouches_received: 0,
+            vouches_given: 0,
+            red_flags: 0,
+            social_verified: 0,
+            total_received_stake_pi: 0,
+            total_given_stake_pi: 0,
+        },
+        history: [],
+        history_count: 0,
+    };
+}
+
+function normalizePassportData(data: any, walletOrUid: string, piUid: string): PassportData {
+    const score = data.score ?? 0;
+    const tier = scoreToTier(score);
+    const pillarOnChain = data.pillar_on_chain ?? data.score_breakdown?.on_chain ?? 0;
+    const pillarVouch = data.pillar_vouch ?? data.score_breakdown?.vouch ?? 0;
+    const pillarSocial = data.pillar_social ?? data.score_breakdown?.social ?? 0;
+    const redFlags = data.red_flags ?? [];
+    const verifiedSocial = data.verified_social ?? [];
+    const vouchesReceived = data.vouches_received ?? data.stats?.vouches_received ?? 0;
+    const vouchesGiven = data.vouches_given ?? data.stats?.vouches_given ?? 0;
+
+    return {
+        wallet_address: data.wallet_address || walletOrUid,
+        pi_uid: data.pi_uid || piUid,
+        minted: data.minted ?? true,
+        score,
+        tier,
+        score_frozen: data.score_frozen ?? false,
+        pillar_on_chain: pillarOnChain,
+        pillar_vouch: pillarVouch,
+        pillar_social: pillarSocial,
+        red_flags: redFlags,
+        verified_social: verifiedSocial,
+        vouches_received: vouchesReceived,
+        vouches_given: vouchesGiven,
+        minted_at: data.minted_at,
+        last_score_update: data.last_score_update ?? data.trust_summary?.last_score_update,
+        trust_summary: {
+            headline: data.trust_summary?.headline || 'Passport active',
+            subline: data.trust_summary?.subline || 'Trust signals are being collected for this passport.',
+            score,
+            tier,
+            score_frozen: data.score_frozen ?? false,
+            last_score_update: data.last_score_update ?? data.trust_summary?.last_score_update,
+        },
+        score_breakdown: {
+            on_chain: pillarOnChain,
+            vouch: pillarVouch,
+            social: pillarSocial,
+            penalties: data.score_breakdown?.penalties ?? 0,
+            total: data.score_breakdown?.total ?? score,
+        },
+        verification_flags: {
+            pi_authenticated: data.verification_flags?.pi_authenticated ?? true,
+            wallet_bound: data.verification_flags?.wallet_bound ?? true,
+            social_verified_count: data.verification_flags?.social_verified_count ?? verifiedSocial.length,
+            has_active_red_flags: data.verification_flags?.has_active_red_flags ?? redFlags.length > 0,
+        },
+        stats: {
+            completed_trades: data.stats?.completed_trades ?? data.completed_trades ?? 0,
+            disputed_trades: data.stats?.disputed_trades ?? data.disputed_trades ?? 0,
+            disputes_filed: data.stats?.disputes_filed ?? 0,
+            disputes_opened_against: data.stats?.disputes_opened_against ?? 0,
+            disputes_resolved: data.stats?.disputes_resolved ?? 0,
+            vouches_received: vouchesReceived,
+            vouches_given: vouchesGiven,
+            red_flags: data.stats?.red_flags ?? redFlags.length,
+            social_verified: data.stats?.social_verified ?? verifiedSocial.length,
+            total_received_stake_pi: data.stats?.total_received_stake_pi ?? 0,
+            total_given_stake_pi: data.stats?.total_given_stake_pi ?? 0,
+        },
+        history: data.history ?? [],
+        history_count: data.history_count ?? (data.history?.length ?? 0),
+    };
+}
+
 export function usePassport() {
     const { user, accessToken, isDevMode } = usePiAuth();
     const [passport, setPassport] = useState<PassportData | null>(null);
@@ -88,102 +305,48 @@ export function usePassport() {
             return;
         }
 
-        // ── Explicit Dev mode (VITE_DEV_MODE=true) — use mock data ────────────
+        const walletOrUid = user.wallet_address || user.uid;
+
         if (EXPLICIT_DEV_MODE && isDevMode) {
             setPassport({
                 ...DEV_MOCK_PASSPORT,
-                wallet_address: user.wallet_address || user.uid,
+                wallet_address: walletOrUid,
                 pi_uid: user.uid,
             });
             setLoading(false);
             return;
         }
 
-        // ── Production / Sandbox: try the real API ────────────────────────────
         setLoading(true);
         setError(null);
+
         try {
-            const walletOrUid = user.wallet_address || user.uid;
             const res = await fetch(`/api/passport/${walletOrUid}`, {
                 headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
             });
 
-            // Check if we got actual JSON back
             const data = await safeJsonParse(res);
-
             if (data === null) {
-                // API returned HTML or non-JSON → backend not available
-                // Show unminted passport so user can still see the UI
-                console.warn('[usePassport] Backend API not available — showing unminted state');
-                setPassport({
-                    wallet_address: walletOrUid,
-                    pi_uid: user.uid,
-                    minted: false,
-                    score: 0,
-                    tier: 'bronze',
-                    score_frozen: false,
-                    pillar_on_chain: 0,
-                    pillar_vouch: 0,
-                    pillar_social: 0,
-                    red_flags: [],
-                    vouches_received: 0,
-                    vouches_given: 0,
-                });
+                console.warn('[usePassport] Backend API not available, showing unminted state');
+                setPassport(buildUnmintedPassport(walletOrUid, user.uid));
                 return;
             }
 
             if (res.ok) {
-                setPassport({
-                    wallet_address: data.wallet_address || walletOrUid,
-                    pi_uid: data.pi_uid || user.uid,
-                    minted: true,
-                    score: data.score ?? 50,
-                    tier: scoreToTier(data.score ?? 50),
-                    score_frozen: data.score_frozen ?? false,
-                    pillar_on_chain: data.pillar_on_chain ?? 30,
-                    pillar_vouch: data.pillar_vouch ?? 0,
-                    pillar_social: data.pillar_social ?? 20,
-                    red_flags: data.red_flags ?? [],
-                    vouches_received: data.vouches_received ?? 0,
-                    vouches_given: data.vouches_given ?? 0,
-                    minted_at: data.minted_at,
-                });
-            } else if (res.status === 404) {
-                // User hasn't minted yet
-                setPassport({
-                    wallet_address: walletOrUid,
-                    pi_uid: user.uid,
-                    minted: false,
-                    score: 0,
-                    tier: 'bronze',
-                    score_frozen: false,
-                    pillar_on_chain: 0,
-                    pillar_vouch: 0,
-                    pillar_social: 0,
-                    red_flags: [],
-                    vouches_received: 0,
-                    vouches_given: 0,
-                });
-            } else {
-                throw new Error(`API error: HTTP ${res.status}`);
+                setPassport(normalizePassportData(data, walletOrUid, user.uid));
+                return;
             }
+
+            if (res.status === 404) {
+                setPassport(buildUnmintedPassport(walletOrUid, user.uid));
+                return;
+            }
+
+            throw new Error(`API error: HTTP ${res.status}`);
         } catch (err) {
             console.error('[usePassport] Fetch failed:', err);
-            // Network error or fetch failure — show unminted state, don't crash
-            setPassport({
-                wallet_address: user.wallet_address || user.uid,
-                pi_uid: user.uid,
-                minted: false,
-                score: 0,
-                tier: 'bronze',
-                score_frozen: false,
-                pillar_on_chain: 0,
-                pillar_vouch: 0,
-                pillar_social: 0,
-                red_flags: [],
-                vouches_received: 0,
-                vouches_given: 0,
-            });
+            setError(err instanceof Error ? err.message : 'Failed to fetch passport');
+            setPassport(buildUnmintedPassport(walletOrUid, user.uid));
         } finally {
             setLoading(false);
         }
