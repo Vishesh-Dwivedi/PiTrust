@@ -51,6 +51,20 @@ export function formatWallet(address: string): string {
     return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
+const CANONICAL_APP_ORIGIN = (import.meta.env.VITE_PUBLIC_APP_ORIGIN || 'https://trustpi.space').replace(/\/+$/, '');
+
+export function getCanonicalAppOrigin(): string {
+    return CANONICAL_APP_ORIGIN;
+}
+
+export function getCanonicalAppUrl(path = '/'): string {
+    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    return `${CANONICAL_APP_ORIGIN}${normalizedPath}`;
+}
+
+export function getCanonicalTrustUrl(walletOrUid: string): string {
+    return getCanonicalAppUrl(`/trust/${encodeURIComponent(walletOrUid)}`);
+}
 export function scorePercentage(score: number): number {
     return Math.min(100, Math.max(0, (score / 1000) * 100));
 }
@@ -94,3 +108,4 @@ export function shortTimeAgo(isoDate: string): string {
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
 }
+

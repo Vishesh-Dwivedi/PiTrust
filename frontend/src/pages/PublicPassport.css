@@ -385,3 +385,20 @@
     }
 }
 
+
+.public-trust-note__callout {
+    padding: 16px;
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.public-trust-note__callout.good {
+    border-color: rgba(46, 204, 113, 0.28);
+    background: linear-gradient(145deg, rgba(46, 204, 113, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.public-trust-note__callout.danger {
+    border-color: rgba(240, 77, 93, 0.28);
+    background: linear-gradient(145deg, rgba(240, 77, 93, 0.14), rgba(255, 255, 255, 0.03));
+}

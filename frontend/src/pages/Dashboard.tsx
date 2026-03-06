@@ -262,6 +262,12 @@ export function Dashboard() {
                 </button>
                 <button
                     className="btn btn-ghost w-full"
+                    onClick={() => navigate('/merchants')}
+                >
+                    Browse Merchants
+                </button>
+                <button
+                    className="btn btn-ghost w-full"
                     onClick={() => navigate('/disputes')}
                 >
                     ⚖️ View Disputes
@@ -271,3 +277,4 @@ export function Dashboard() {
         </div>
     );
 }
+

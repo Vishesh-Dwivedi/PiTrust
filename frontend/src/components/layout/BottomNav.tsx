@@ -1,5 +1,5 @@
 /**
- * BottomNav — mobile-first thumb-zone navigation
+ * BottomNav - mobile-first thumb-zone navigation
  * Fixed at the bottom with safe-area handling
  */
 import type { ReactNode } from 'react';
@@ -26,6 +26,15 @@ const IdCardIcon = () => (
     </svg>
 );
 
+const StorefrontIcon = () => (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 10l1.5-5h15L21 10" />
+        <path d="M5 10v9h14v-9" />
+        <path d="M9 19v-5h6v5" />
+        <path d="M3 10c0 1.7 1.3 3 3 3s3-1.3 3-3c0 1.7 1.3 3 3 3s3-1.3 3-3c0 1.7 1.3 3 3 3s3-1.3 3-3" />
+    </svg>
+);
+
 const HandshakeIcon = () => (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
         <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z" />
@@ -43,6 +52,7 @@ const GavelIcon = () => (
 const navItems: NavItem[] = [
     { to: '/dashboard', icon: <ShieldIcon />, label: 'Trust' },
     { to: '/passport', icon: <IdCardIcon />, label: 'Passport' },
+    { to: '/merchants', icon: <StorefrontIcon />, label: 'Merchants' },
     { to: '/vouch', icon: <HandshakeIcon />, label: 'Vouch' },
     { to: '/disputes', icon: <GavelIcon />, label: 'Disputes' },
 ];
@@ -63,3 +73,4 @@ export function BottomNav() {
         </nav>
     );
 }
+

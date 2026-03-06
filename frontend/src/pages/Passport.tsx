@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { usePassport } from '../hooks/usePassport';
 import { usePiPayment } from '../hooks/usePiPayment';
 import { usePiAuth } from '../context/PiAuthContext';
-import { formatPi, formatWallet, scorePercentage, shortTimeAgo, tierColor, tierLabel } from '../utils/helpers';
+import { formatPi, formatWallet, getCanonicalTrustUrl, scorePercentage, shortTimeAgo, tierColor, tierLabel } from '../utils/helpers';
 import './Passport.css';
 
 const TIER_MOTTOS: Record<string, string> = {
@@ -125,7 +125,7 @@ export function Passport() {
     const handleShare = async () => {
         if (!passport) return;
 
-        const publicUrl = `${window.location.origin}/trust/${encodeURIComponent(passport.wallet_address)}`;
+        const publicUrl = getCanonicalTrustUrl(passport.wallet_address);
         const shareText = `I am ${tierLabel(passport.tier)} on PiTrust with a score of ${passport.score}/1000. Check trust before you trade.`;
 
         try {
@@ -594,97 +594,131 @@ export function Passport() {
                         <div className="passport-section-block animate-fade-up">
                             <h2 className="section-title">Become a verified merchant</h2>
                             <div className="merchant-onboarding frost-card">
-                                <div className="merchant-onboarding__top">
-                                    <div>
+                                <div className="merchant-onboarding__hero">
+                                    <div className="merchant-onboarding__intro">
                                         <p className="passport-summary__eyebrow">Merchant activation</p>
-                                        <h3 className="merchant-profile__title">Turn your Passport into a merchant trust card</h3>
+                                        <h3 className="merchant-profile__title">Turn your Passport into a buyer-ready merchant card</h3>
                                         <p className="merchant-profile__copy">
-                                            Register once to unlock a verified merchant badge, public merchant profile, and buyer-facing trust context before payment.
+                                            Register once to unlock a verified merchant badge, merchant discovery placement, and buyer-facing trust context before payment.
                                         </p>
-                                    </div>
-                                    <div className={`merchant-onboarding__status ${merchantEligible ? 'eligible' : 'locked'}`}>
-                                        <strong>{merchantEligible ? 'Eligible now' : 'Not unlocked yet'}</strong>
-                                        <span>{merchantGateCopy}</span>
-                                    </div>
-                                </div>
-
-                                <div className="merchant-onboarding__requirements">
-                                    <div className="proof-item frost-card">
-                                        <span className="proof-item__label">Verification fee</span>
-                                        <strong>5 Pi</strong>
-                                    </div>
-                                    <div className="proof-item frost-card">
-                                        <span className="proof-item__label">Minimum score</span>
-                                        <strong>{MERCHANT_MIN_SCORE}+</strong>
-                                    </div>
-                                    <div className="proof-item frost-card">
-                                        <span className="proof-item__label">Current score</span>
-                                        <strong>{passport.score}</strong>
-                                    </div>
-                                    <div className="proof-item frost-card">
-                                        <span className="proof-item__label">Status</span>
-                                        <strong>{passport.score_frozen ? 'Frozen' : 'Ready for review'}</strong>
-                                    </div>
-                                </div>
-
-                                <form className="merchant-form" onSubmit={(event) => { void handleMerchantRegister(event); }}>
-                                    <div className="merchant-form__grid">
-                                        <label className="merchant-field">
-                                            <span>Display name</span>
-                                            <input
-                                                value={merchantForm.display_name}
-                                                onChange={(event) => setMerchantForm((current) => ({ ...current, display_name: event.target.value }))}
-                                                placeholder="How buyers should see your shop"
-                                                maxLength={100}
-                                            />
-                                        </label>
-                                        <label className="merchant-field">
-                                            <span>Category</span>
-                                            <select
-                                                value={merchantForm.category}
-                                                onChange={(event) => setMerchantForm((current) => ({ ...current, category: event.target.value }))}
-                                            >
-                                                {MERCHANT_CATEGORIES.map((category) => (
-                                                    <option key={category} value={category}>{category}</option>
-                                                ))}
-                                            </select>
-                                        </label>
-                                        <label className="merchant-field">
-                                            <span>Location</span>
-                                            <input
-                                                value={merchantForm.location}
-                                                onChange={(event) => setMerchantForm((current) => ({ ...current, location: event.target.value }))}
-                                                placeholder="City, region, or delivery zone"
-                                                maxLength={100}
-                                            />
-                                        </label>
-                                        <label className="merchant-field merchant-field--wide">
-                                            <span>Description</span>
-                                            <textarea
-                                                value={merchantForm.description}
-                                                onChange={(event) => setMerchantForm((current) => ({ ...current, description: event.target.value }))}
-                                                placeholder="What do you sell and why should buyers trust you?"
-                                                maxLength={240}
-                                                rows={4}
-                                            />
-                                        </label>
-                                    </div>
-
-                                    <div className="merchant-form__footer">
-                                        <p className="merchant-form__note">
-                                            Your merchant profile becomes part of your public trust card and is visible to buyers before they pay.
-                                        </p>
-                                        <div className="merchant-form__actions">
-                                            {merchantFormError && <div className="mint-error badge badge-danger">{merchantFormError}</div>}
-                                            {payError && <div className="mint-error badge badge-danger">{payError}</div>}
-                                            <button className="btn btn-gold" type="submit" disabled={!merchantEligible || payState === 'awaiting_approval' || payState === 'processing'}>
-                                                {payState === 'awaiting_approval' && 'Waiting for approval...'}
-                                                {payState === 'processing' && 'Activating merchant profile...'}
-                                                {(payState === 'idle' || payState === 'cancelled' || payState === 'error' || payState === 'completed') && 'Verify Merchant - 5 Pi'}
-                                            </button>
+                                        <div className="merchant-onboarding__spotlight">
+                                            <div className="merchant-onboarding__spotlight-card">
+                                                <span>Buyer signal</span>
+                                                <strong>Pre-check before payment</strong>
+                                                <p>Show your score, dispute posture, and trade depth before the buyer sends Pi.</p>
+                                            </div>
+                                            <div className="merchant-onboarding__spotlight-card">
+                                                <span>Visibility</span>
+                                                <strong>Discovery-ready listing</strong>
+                                                <p>Appear inside the merchant directory with trust cues that make you easier to inspect.</p>
+                                            </div>
+                                            <div className="merchant-onboarding__spotlight-card">
+                                                <span>Trust asset</span>
+                                                <strong>Public merchant card</strong>
+                                                <p>Your merchant profile extends the Passport you already use for identity and reputation.</p>
+                                            </div>
                                         </div>
                                     </div>
-                                </form>
+
+                                    <aside className={`merchant-onboarding__status ${merchantEligible ? 'eligible' : 'locked'}`}>
+                                        <span className="merchant-onboarding__status-label">Eligibility</span>
+                                        <strong>{merchantEligible ? 'Eligible now' : 'Not unlocked yet'}</strong>
+                                        <p className="merchant-onboarding__status-copy">{merchantGateCopy}</p>
+                                        <div className="merchant-onboarding__score">
+                                            <span>Current trust</span>
+                                            <strong>{passport.score}</strong>
+                                            <span>{tierLabel(passport.tier)}</span>
+                                        </div>
+                                        <div className="merchant-onboarding__requirements">
+                                            <div className="proof-item frost-card">
+                                                <span className="proof-item__label">Verification fee</span>
+                                                <strong>5 Pi</strong>
+                                            </div>
+                                            <div className="proof-item frost-card">
+                                                <span className="proof-item__label">Minimum score</span>
+                                                <strong>{MERCHANT_MIN_SCORE}+</strong>
+                                            </div>
+                                            <div className="proof-item frost-card">
+                                                <span className="proof-item__label">Current score</span>
+                                                <strong>{passport.score}</strong>
+                                            </div>
+                                            <div className="proof-item frost-card">
+                                                <span className="proof-item__label">Status</span>
+                                                <strong>{passport.score_frozen ? 'Frozen' : 'Ready for review'}</strong>
+                                            </div>
+                                        </div>
+                                    </aside>
+                                </div>
+
+                                <div className="merchant-form-shell">
+                                    <div className="merchant-form-shell__header">
+                                        <div>
+                                            <p className="passport-summary__eyebrow">Merchant application</p>
+                                            <h3 className="merchant-profile__title">Create the public profile buyers will inspect</h3>
+                                        </div>
+                                        <p className="merchant-form__note">
+                                            Keep it tight and factual. This profile will show up on your public trust card before any buyer pays you.
+                                        </p>
+                                    </div>
+
+                                    <form className="merchant-form" onSubmit={(event) => { void handleMerchantRegister(event); }}>
+                                        <div className="merchant-form__grid">
+                                            <label className="merchant-field">
+                                                <span>Display name</span>
+                                                <input
+                                                    value={merchantForm.display_name}
+                                                    onChange={(event) => setMerchantForm((current) => ({ ...current, display_name: event.target.value }))}
+                                                    placeholder="How buyers should see your shop"
+                                                    maxLength={100}
+                                                />
+                                            </label>
+                                            <label className="merchant-field">
+                                                <span>Category</span>
+                                                <select
+                                                    value={merchantForm.category}
+                                                    onChange={(event) => setMerchantForm((current) => ({ ...current, category: event.target.value }))}
+                                                >
+                                                    {MERCHANT_CATEGORIES.map((category) => (
+                                                        <option key={category} value={category}>{category}</option>
+                                                    ))}
+                                                </select>
+                                            </label>
+                                            <label className="merchant-field">
+                                                <span>Location</span>
+                                                <input
+                                                    value={merchantForm.location}
+                                                    onChange={(event) => setMerchantForm((current) => ({ ...current, location: event.target.value }))}
+                                                    placeholder="City, region, or delivery zone"
+                                                    maxLength={100}
+                                                />
+                                            </label>
+                                            <label className="merchant-field merchant-field--wide">
+                                                <span>Description</span>
+                                                <textarea
+                                                    value={merchantForm.description}
+                                                    onChange={(event) => setMerchantForm((current) => ({ ...current, description: event.target.value }))}
+                                                    placeholder="What do you sell and why should a buyer trust this profile?"
+                                                    maxLength={240}
+                                                    rows={4}
+                                                />
+                                            </label>
+                                        </div>
+
+                                        <div className="merchant-form__footer">
+                                            <div className="merchant-form__alerts">
+                                                {merchantFormError && <div className="mint-error badge badge-danger">{merchantFormError}</div>}
+                                                {payError && <div className="mint-error badge badge-danger">{payError}</div>}
+                                            </div>
+                                            <div className="merchant-form__actions">
+                                                <button className="btn btn-gold" type="submit" disabled={!merchantEligible || payState === 'awaiting_approval' || payState === 'processing'}>
+                                                    {payState === 'awaiting_approval' && 'Waiting for approval...'}
+                                                    {payState === 'processing' && 'Activating merchant profile...'}
+                                                    {(payState === 'idle' || payState === 'cancelled' || payState === 'error' || payState === 'completed') && 'Verify Merchant - 5 Pi'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </form>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -766,10 +800,4 @@ export function Passport() {
         </div>
     );
 }
-
-
-
-
-
-
 

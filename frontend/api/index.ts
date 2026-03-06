@@ -148,7 +148,55 @@ async function getPayment(paymentId: string) {
 
 const PASSPORT_MINT_PRICE_PI = 1;
 const PASSPORT_MINT_MEMOS = new Set(['PiTrust Passport Mint', 'pitrust_mint']);
+const MERCHANT_REGISTRATION_PRICE_PI = 5;
+const MERCHANT_REGISTRATION_MEMOS = new Set(['PiTrust Merchant Verification', 'PiTrust Merchant Registration']);
+const MERCHANT_MIN_SCORE = 200;
 
+const MerchantProfileSchema = z.object({
+    display_name: z.string().trim().min(3).max(100),
+    category: z.string().trim().min(2).max(50),
+    description: z.string().trim().max(240).optional().default(''),
+    location: z.string().trim().max(100).optional().default(''),
+});
+
+type MerchantProfileInput = z.infer<typeof MerchantProfileSchema>;
+
+function assertValidMerchantRegistrationPayment(
+    payment: Awaited<ReturnType<typeof getPayment>>,
+    expectedUserUid?: string
+) {
+    if (expectedUserUid && payment.user_uid !== expectedUserUid) {
+        throw new Error('Payment user mismatch');
+    }
+    if (Math.abs(Number(payment.amount) - MERCHANT_REGISTRATION_PRICE_PI) > 0.0000001) {
+        throw new Error(`Invalid merchant registration amount: ${payment.amount} Pi`);
+    }
+    if (!MERCHANT_REGISTRATION_MEMOS.has(String(payment.memo || ''))) {
+        throw new Error(`Invalid payment memo: ${payment.memo}`);
+    }
+    if (payment.metadata?.type !== 'merchant_registration') {
+        throw new Error('Invalid payment type');
+    }
+    if (!payment.from_address) {
+        throw new Error('Payment wallet missing');
+    }
+    if (payment.status.cancelled || payment.status.user_cancelled) {
+        throw new Error('Payment cancelled');
+    }
+}
+
+function normalizeMerchantProfile(input: MerchantProfileInput) {
+    return {
+        display_name: input.display_name.trim(),
+        category: input.category.trim(),
+        description: input.description?.trim() || null,
+        location: input.location?.trim() || null,
+    };
+}
+
+function buildMerchantMetadataHash(profile: ReturnType<typeof normalizeMerchantProfile>) {
+    return createHash('sha256').update(JSON.stringify(profile)).digest('hex');
+}
 function assertValidPassportMintPayment(
     payment: Awaited<ReturnType<typeof getPayment>>,
     expectedUserUid?: string
@@ -180,12 +228,27 @@ async function findPassportByIdentity(walletAddress: string, piUid: string) {
         pi_uid: string;
         score: number;
         tier: string;
+        score_frozen: boolean;
     }>(
-        `SELECT id, wallet_address, pi_uid, score, tier
+        `SELECT id, wallet_address, pi_uid, score, tier, score_frozen
          FROM passports
          WHERE wallet_address = $1 OR pi_uid = $2
          LIMIT 1`,
         [walletAddress, piUid]
+    );
+}
+
+async function findMerchantByWallet(walletAddress: string) {
+    return queryOne<{
+        wallet_address: string;
+        status: string;
+        display_name: string | null;
+    }>(
+        `SELECT wallet_address, status, display_name
+         FROM merchants
+         WHERE wallet_address = $1
+         LIMIT 1`,
+        [walletAddress]
     );
 }
 // Pi Auth Middleware
@@ -363,6 +426,54 @@ app.post('/api/payments/incomplete', async (req, res) => {
                     `INSERT INTO passports (wallet_address, pi_uid, minted_at, score, tier)
                      VALUES ($1, $2, NOW(), 50, 'bronze')`,
                     [payment.from_address, payment.user_uid]
+                );
+            }
+        } else if (pType === 'merchant_registration' && payment.status.transaction_verified) {
+            assertValidMerchantRegistrationPayment(payment, payment.user_uid);
+            const passport = await findPassportByIdentity(payment.from_address, payment.user_uid);
+            if (!passport) {
+                throw new Error('Passport not found for merchant registration');
+            }
+            if (passport.score_frozen) {
+                throw new Error('Passport score is frozen');
+            }
+            if (passport.score < MERCHANT_MIN_SCORE) {
+                throw new Error(`Merchant verification requires a score of at least ${MERCHANT_MIN_SCORE}`);
+            }
+
+            const merchantPayload = MerchantProfileSchema.parse({
+                display_name: payment.metadata?.display_name,
+                category: payment.metadata?.category,
+                description: payment.metadata?.description || '',
+                location: payment.metadata?.location || '',
+            });
+            const merchantProfile = normalizeMerchantProfile(merchantPayload);
+            const metadataHash = buildMerchantMetadataHash(merchantProfile);
+            const existingMerchant = await findMerchantByWallet(payment.from_address);
+
+            if (!existingMerchant) {
+                await query(
+                    `INSERT INTO merchants (
+                        wallet_address,
+                        metadata_hash,
+                        display_name,
+                        category,
+                        description,
+                        location,
+                        status,
+                        registration_fee_tx,
+                        registered_at,
+                        updated_at
+                     ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, NOW(), NOW())`,
+                    [
+                        payment.from_address,
+                        metadataHash,
+                        merchantProfile.display_name,
+                        merchantProfile.category,
+                        merchantProfile.description,
+                        merchantProfile.location,
+                        resolvedTxId,
+                    ]
                 );
             }
         } else if (resolvedTxId && pType === 'vouch_stake' && payment.status.transaction_verified) {
@@ -1125,24 +1236,250 @@ app.get('/validation-key.txt', (req, res) => {
     res.send('4bcb87b8aa6d5f864e36edcefa323ef25130ad02432f0b1607e47bcd2fa65846b3a622367c321571252c91fa4bf175c4271618e73a3cb24e48ea3ddebedb2e00');
 });
 
-// Merchant Route
-app.get('/api/merchant', async (req, res) => {
-    const page = parseInt(req.query.page as string || '1');
-    const limit = Math.min(parseInt(req.query.limit as string || '20'), 50);
-    const offset = (page - 1) * limit;
-    const merchants = await query<{
-        wallet_address: string;
-        display_name: string;
-        category: string;
-        registered_at: string;
-    }>(
-        `SELECT wallet_address, display_name, category, registered_at
-     FROM merchants WHERE status = 'active' ORDER BY registered_at DESC LIMIT $1 OFFSET $2`,
-        [limit, offset]
-    );
-    res.json({ merchants, page, limit });
+// Merchant Routes
+const MerchantApproveSchema = z.object({
+    paymentId: z.string().min(10),
+    display_name: z.string().trim().min(3).max(100),
+    category: z.string().trim().min(2).max(50),
+    description: z.string().trim().max(240).optional().default(''),
+    location: z.string().trim().max(100).optional().default(''),
 });
 
+const MerchantCompleteSchema = MerchantApproveSchema.extend({
+    txId: z.string().min(10),
+});
+
+app.post('/api/merchant/approve-register', piAuthMiddleware, writeLimiter, async (req, res) => {
+    const parse = MerchantApproveSchema.safeParse(req.body);
+    if (!parse.success) {
+        res.status(400).json({ error: parse.error.flatten() });
+        return;
+    }
+
+    const { paymentId, ...profileInput } = parse.data;
+    const piUser = req.piUser!;
+
+    try {
+        const passport = await findPassportByIdentity(req.piUser?.wallet_address || '', piUser.uid);
+        if (!passport) {
+            res.status(403).json({ error: 'Mint your Passport before applying as a merchant.' });
+            return;
+        }
+        if (passport.score_frozen) {
+            res.status(423).json({ error: 'Merchant verification is unavailable while your score is frozen.' });
+            return;
+        }
+        if (passport.score < MERCHANT_MIN_SCORE) {
+            res.status(403).json({ error: `Merchant verification requires a trust score of at least ${MERCHANT_MIN_SCORE}.` });
+            return;
+        }
+
+        const payment = await getPayment(paymentId);
+        assertValidMerchantRegistrationPayment(payment, piUser.uid);
+
+        if (passport.wallet_address !== payment.from_address) {
+            res.status(409).json({ error: 'Payment wallet does not match your Passport wallet.' });
+            return;
+        }
+
+        const existingMerchant = await findMerchantByWallet(payment.from_address);
+        if (existingMerchant) {
+            res.status(409).json({ error: 'Merchant profile already exists for this wallet.' });
+            return;
+        }
+
+        MerchantProfileSchema.parse(profileInput);
+
+        if (!payment.status.developer_approved) {
+            await approvePayment(paymentId);
+        }
+
+        res.json({ approved: true, message: 'Merchant verification payment approved.' });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : 'Merchant approval failed';
+        res.status(422).json({ error: message });
+    }
+});
+
+app.post('/api/merchant/complete-register', piAuthMiddleware, writeLimiter, async (req, res) => {
+    const parse = MerchantCompleteSchema.safeParse(req.body);
+    if (!parse.success) {
+        res.status(400).json({ error: parse.error.flatten() });
+        return;
+    }
+
+    const { paymentId, txId, ...profileInput } = parse.data;
+    const piUser = req.piUser!;
+
+    try {
+        const passport = await findPassportByIdentity(req.piUser?.wallet_address || '', piUser.uid);
+        if (!passport) {
+            res.status(403).json({ error: 'Mint your Passport before applying as a merchant.' });
+            return;
+        }
+        if (passport.score_frozen) {
+            res.status(423).json({ error: 'Merchant verification is unavailable while your score is frozen.' });
+            return;
+        }
+        if (passport.score < MERCHANT_MIN_SCORE) {
+            res.status(403).json({ error: `Merchant verification requires a trust score of at least ${MERCHANT_MIN_SCORE}.` });
+            return;
+        }
+
+        const payment = await getPayment(paymentId);
+        assertValidMerchantRegistrationPayment(payment, piUser.uid);
+
+        if (!payment.status.transaction_verified) {
+            res.status(422).json({ error: 'Transaction not yet confirmed' });
+            return;
+        }
+        if (payment.transaction?.txid && payment.transaction.txid !== txId) {
+            res.status(422).json({ error: 'Transaction hash mismatch' });
+            return;
+        }
+        if (passport.wallet_address !== payment.from_address) {
+            res.status(409).json({ error: 'Payment wallet does not match your Passport wallet.' });
+            return;
+        }
+
+        const merchantProfile = normalizeMerchantProfile(MerchantProfileSchema.parse(profileInput));
+        const metadataHash = buildMerchantMetadataHash(merchantProfile);
+        const existingMerchant = await findMerchantByWallet(payment.from_address);
+
+        if (!payment.status.developer_completed) {
+            await completePayment(paymentId, txId);
+        }
+
+        if (!existingMerchant) {
+            await query(
+                `INSERT INTO merchants (
+                    wallet_address,
+                    metadata_hash,
+                    display_name,
+                    category,
+                    description,
+                    location,
+                    status,
+                    registration_fee_tx,
+                    registered_at,
+                    updated_at
+                 ) VALUES ($1, $2, $3, $4, $5, $6, 'active', $7, NOW(), NOW())`,
+                [
+                    payment.from_address,
+                    metadataHash,
+                    merchantProfile.display_name,
+                    merchantProfile.category,
+                    merchantProfile.description,
+                    merchantProfile.location,
+                    txId,
+                ]
+            );
+        }
+
+        res.json({
+            success: true,
+            message: existingMerchant ? 'Merchant profile already active.' : 'Merchant profile verified and activated.',
+        });
+    } catch (err) {
+        const message = err instanceof Error ? err.message : 'Merchant completion failed';
+        res.status(500).json({ error: message });
+    }
+});
+
+app.get('/api/merchant', async (req, res) => {
+    const page = Math.max(1, parseInt(req.query.page as string || '1'));
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string || '12'), 1), 50);
+    const offset = (page - 1) * limit;
+    const category = String(req.query.category || '').trim();
+    const search = String(req.query.search || '').trim();
+
+    const filters: string[] = ["m.status = 'active'"];
+    const values: Array<string | number> = [];
+
+    if (category) {
+        values.push(category);
+        filters.push(`m.category = $${values.length}`);
+    }
+
+    if (search) {
+        values.push(`%${search}%`);
+        const searchIndex = values.length;
+        filters.push(`(m.display_name ILIKE $${searchIndex} OR m.category ILIKE $${searchIndex} OR COALESCE(m.location, '') ILIKE $${searchIndex})`);
+    }
+
+    values.push(limit);
+    const limitIndex = values.length;
+    values.push(offset);
+    const offsetIndex = values.length;
+
+    try {
+        const merchants = await query<{
+            wallet_address: string;
+            display_name: string;
+            category: string;
+            description: string | null;
+            location: string | null;
+            registered_at: string;
+            status: string;
+            score: number;
+            tier: string;
+            score_frozen: boolean;
+            completed_trades: number;
+            disputed_trades: number;
+            total_trades: number;
+            active_red_flags: string;
+        }>(
+            `SELECT
+                m.wallet_address,
+                m.display_name,
+                m.category,
+                m.description,
+                m.location,
+                m.registered_at,
+                m.status,
+                p.score,
+                p.tier,
+                p.score_frozen,
+                COALESCE(t.completed_count, 0) as completed_trades,
+                COALESCE(t.disputed_count, 0) as disputed_trades,
+                COALESCE(t.total_count, 0) as total_trades,
+                COALESCE(r.active_red_flags, 0) as active_red_flags
+             FROM merchants m
+             JOIN passports p ON p.wallet_address = m.wallet_address
+             LEFT JOIN (
+                SELECT seller_wallet,
+                       COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
+                       COUNT(*) FILTER (WHERE status IN ('disputed', 'filed')) as disputed_count,
+                       COUNT(*) as total_count
+                FROM trades
+                GROUP BY seller_wallet
+             ) t ON t.seller_wallet = m.wallet_address
+             LEFT JOIN (
+                SELECT wallet_address, COUNT(*) as active_red_flags
+                FROM red_flags
+                GROUP BY wallet_address
+             ) r ON r.wallet_address = m.wallet_address
+             WHERE ${filters.join(' AND ')}
+             ORDER BY p.score DESC, m.registered_at DESC
+             LIMIT $${limitIndex} OFFSET $${offsetIndex}`,
+            values
+        );
+
+        res.json({
+            merchants: merchants.map((merchant) => ({
+                ...merchant,
+                badge: merchant.status === 'active' ? 'pitrust_verified' : null,
+            })),
+            page,
+            limit,
+            category: category || null,
+            search: search || null,
+        });
+    } catch (err) {
+        console.error('GET /merchant error:', err);
+        res.status(500).json({ error: 'Failed to fetch merchants' });
+    }
+});
 // Trade Route
 app.get('/api/trade/:id', async (req, res) => {
     const trade = await queryOne<{
@@ -1172,15 +1509,4 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 export default app;
-
-
-
-
-
-
-
-
-
-
-
 

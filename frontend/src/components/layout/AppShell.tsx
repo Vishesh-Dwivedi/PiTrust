@@ -5,6 +5,7 @@ import type { ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { BottomNav } from './BottomNav';
 import { usePiAuth } from '../../context/PiAuthContext';
+import { getCanonicalAppUrl } from '../../utils/helpers';
 import './AppShell.css';
 
 interface AppShellProps {
@@ -29,7 +30,7 @@ export function AppShell({ children }: AppShellProps) {
                     <span className="logo-text">PiTrust</span>
                 </div>
                 {isPublicTrustRoute ? (
-                    <a className="app-header__link" href="/passport">Open App</a>
+                    <a className="app-header__link" href={getCanonicalAppUrl('/dashboard')}>Open App</a>
                 ) : user ? (
                     <div className="app-header__user">
                         <span className="user-avatar">{(user.username || 'P').charAt(0).toUpperCase()}</span>
@@ -46,3 +47,4 @@ export function AppShell({ children }: AppShellProps) {
         </div>
     );
 }
+

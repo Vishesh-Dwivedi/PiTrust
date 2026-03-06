@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, FormEvent } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { usePublicPassport } from '../hooks/usePublicPassport';
-import { formatPi, formatWallet, shortTimeAgo, tierColor, tierLabel } from '../utils/helpers';
+import { formatPi, formatWallet, getCanonicalAppUrl, getCanonicalTrustUrl, shortTimeAgo, tierColor, tierLabel } from '../utils/helpers';
 import './PublicPassport.css';
 
 function historyToneClass(impact?: 'positive' | 'neutral' | 'warning') {
@@ -83,6 +83,67 @@ export function PublicPassport() {
         ];
     }, [passport]);
 
+    const buyerPrecheck = useMemo(() => {
+        if (!passport) return null;
+
+        const merchantCompleted = passport.merchant_profile?.completed_trades ?? passport.stats.completed_trades;
+        const merchantDisputes = passport.merchant_profile?.disputed_trades ?? passport.stats.disputed_trades;
+        const warnings = passport.red_flags.length;
+
+        if (passport.merchant_profile) {
+            if (warnings > 0 || passport.score_frozen) {
+                return {
+                    eyebrow: 'Buyer pre-check',
+                    title: 'Pause and inspect before paying',
+                    tone: 'danger',
+                    summary: 'This merchant card has visible trust friction. Open the history and warning state before you send Pi.',
+                    points: [
+                        'Review the active warning count and recent disputes first.',
+                        'Keep payment size small until trust signals improve.',
+                        'Use the public trust history, not just the merchant badge.',
+                    ],
+                };
+            }
+
+            if (passport.score >= 700 && merchantCompleted >= 5 && merchantDisputes === 0) {
+                return {
+                    eyebrow: 'Buyer pre-check',
+                    title: 'Looks strong for regular Pi commerce',
+                    tone: 'good',
+                    summary: 'The trust score, trade history, and warning posture all read clean enough for routine transactions.',
+                    points: [
+                        'Still inspect the full history if the payment amount is high.',
+                        'Prefer merchants with repeat completed trades over fresh profiles.',
+                        'Match the merchant location and category to the offer you received.',
+                    ],
+                };
+            }
+
+            return {
+                eyebrow: 'Buyer pre-check',
+                title: 'Promising, but read the trail first',
+                tone: 'neutral',
+                summary: 'This merchant has a usable trust card, but the history is not yet deep enough to rely on the score alone.',
+                points: [
+                    'Check disputes and completed trades before larger payments.',
+                    'Start smaller if the merchant track record is still thin.',
+                    'Use the shared trust card as the primary reference, not chat claims.',
+                ],
+            };
+        }
+
+        return {
+            eyebrow: 'Reading guide',
+            title: 'How to use this passport',
+            tone: 'neutral',
+            summary: 'Treat the score as a summary, then read the proofs, warnings, and trust history before transacting.',
+            points: [
+                'Use the score as a summary, not the whole story.',
+                'Check warnings, disputes, and history before paying.',
+                'Prefer passports with consistent proofs and completed activity.',
+            ],
+        };
+    }, [passport]);
     const handleLookup = (event: FormEvent<HTMLFormElement>) => {
         event.preventDefault();
         const nextIdentifier = lookupValue.trim();
@@ -92,7 +153,7 @@ export function PublicPassport() {
 
     const handleShare = async () => {
         if (!passport) return;
-        const url = window.location.href;
+        const url = getCanonicalTrustUrl(passport.wallet_address);
         const title = `${tierLabel(passport.tier)} Trust Passport`;
         const text = `Check this PiTrust Passport before you trade. Score: ${passport.score}/1000.`;
 
@@ -114,7 +175,7 @@ export function PublicPassport() {
     };
 
     const handleOpenApp = () => {
-        window.location.href = '/passport';
+        window.location.assign(getCanonicalAppUrl('/dashboard'));
     };
 
     const mintedDate = passport?.minted_at
@@ -337,12 +398,15 @@ export function PublicPassport() {
                         </div>
 
                         <div className="public-trust-note frost-card">
-                            <p className="public-section__eyebrow">Reading guide</p>
-                            <h2>How to use this passport</h2>
+                            <p className="public-section__eyebrow">{buyerPrecheck?.eyebrow}</p>
+                            <h2>{buyerPrecheck?.title}</h2>
+                            <div className={`public-trust-note__callout ${buyerPrecheck?.tone || 'neutral'}`}>
+                                <p>{buyerPrecheck?.summary}</p>
+                            </div>
                             <ul>
-                                <li>Use the score as a summary, not the whole story.</li>
-                                <li>Check warnings, disputes, and history before paying.</li>
-                                <li>Prefer passports with consistent proofs and completed activity.</li>
+                                {buyerPrecheck?.points.map((point) => (
+                                    <li key={point}>{point}</li>
+                                ))}
                             </ul>
                             <button className="btn btn-ghost" onClick={handleOpenApp}>Open PiTrust</button>
                         </div>
@@ -380,5 +444,4 @@ export function PublicPassport() {
         </div>
     );
 }
-
 
