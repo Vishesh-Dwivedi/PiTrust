@@ -1351,8 +1351,18 @@
 
     .trust-signal-grid,
     .score-breakdown-grid,
-    .proof-list {
+    .proof-list,
+    .merchant-profile__grid,
+    .merchant-onboarding__requirements,
+    .merchant-form__grid {
         grid-template-columns: 1fr;
+    }
+
+    .merchant-profile__top,
+    .merchant-onboarding__top,
+    .merchant-form__footer {
+        flex-direction: column;
+        align-items: flex-start;
     }
 
     .trust-history__topline {
@@ -1360,4 +1370,6 @@
         align-items: flex-start;
     }
 }
+
+
 

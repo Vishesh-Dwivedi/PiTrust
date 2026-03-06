@@ -1,7 +1,7 @@
 /**
- * usePiPayment — wraps Pi SDK createPayment with state management.
+ * usePiPayment wraps Pi SDK createPayment with state management.
  * Only simulates payments in explicit dev mode (VITE_DEV_MODE=true).
- * In Pi Sandbox / production, always uses the real Pi SDK.
+ * In Pi Sandbox / production, it always uses the real Pi SDK.
  */
 import { useState, useCallback } from 'react';
 import type { PiPaymentData, PiPaymentCallbacks } from '../utils/piTypes';
@@ -9,6 +9,14 @@ import type { PiPaymentData, PiPaymentCallbacks } from '../utils/piTypes';
 const EXPLICIT_DEV_MODE = import.meta.env.VITE_DEV_MODE === 'true';
 
 type PaymentState = 'idle' | 'awaiting_approval' | 'processing' | 'completed' | 'cancelled' | 'error';
+
+type MerchantRegistrationMetadata = {
+    type: 'merchant_registration';
+    display_name: string;
+    category: string;
+    description?: string;
+    location?: string;
+};
 
 export function usePiPayment(accessToken?: string) {
     const [state, setState] = useState<PaymentState>('idle');
@@ -26,10 +34,9 @@ export function usePiPayment(accessToken?: string) {
 
         const sdk = window.Pi;
 
-        // ── Only simulate in EXPLICIT dev mode ────────────────────────────────
         if (!sdk) {
             if (EXPLICIT_DEV_MODE) {
-                console.warn('[PiPayment] VITE_DEV_MODE — simulating payment');
+                console.warn('[PiPayment] VITE_DEV_MODE - simulating payment');
                 const mockId = `mock_pay_${Date.now()}`;
                 setState('processing');
                 if (onApproved) await onApproved(mockId);
@@ -38,13 +45,11 @@ export function usePiPayment(accessToken?: string) {
                 if (onCompleted) await onCompleted(mockId, 'mock_tx_abcdef123456');
                 return;
             }
-            // Not dev mode and no SDK — real error
             setState('error');
             setError('Pi Browser is required to make payments. Please open this app in the Pi Browser.');
             return;
         }
 
-        // ── Production: use real Pi SDK ───────────────────────────────────────
         const paymentType = data.metadata?.type as string;
         let approveRoute = '/api/payments/approve';
         let completeRoute = '/api/payments/complete';
@@ -58,6 +63,9 @@ export function usePiPayment(accessToken?: string) {
         } else if (paymentType === 'passport_mint') {
             approveRoute = '/api/passport/approve-mint';
             completeRoute = '/api/passport/complete-mint';
+        } else if (paymentType === 'merchant_registration') {
+            approveRoute = '/api/merchant/approve-register';
+            completeRoute = '/api/merchant/complete-register';
         }
 
         const callbacks: PiPaymentCallbacks = {
@@ -65,19 +73,25 @@ export function usePiPayment(accessToken?: string) {
                 setPaymentId(pid);
                 setState('processing');
                 try {
-                    const bodyPayload: any = { paymentId: pid };
+                    const bodyPayload: Record<string, unknown> = { paymentId: pid };
                     if (paymentType === 'vouch_stake') {
                         bodyPayload.targetWallet = data.metadata?.target;
                     } else if (paymentType === 'dispute_filing') {
                         bodyPayload.defendant_wallet = data.metadata?.target;
                         bodyPayload.evidence_hash = data.metadata?.evidence;
+                    } else if (paymentType === 'merchant_registration') {
+                        const merchantData = data.metadata as MerchantRegistrationMetadata;
+                        bodyPayload.display_name = merchantData.display_name;
+                        bodyPayload.category = merchantData.category;
+                        bodyPayload.description = merchantData.description || '';
+                        bodyPayload.location = merchantData.location || '';
                     }
 
                     const res = await fetch(approveRoute, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${accessToken || ''}`
+                            Authorization: `Bearer ${accessToken || ''}`,
                         },
                         body: JSON.stringify(bodyPayload),
                     });
@@ -90,25 +104,31 @@ export function usePiPayment(accessToken?: string) {
                     console.error('[PiPayment] Approval error:', e);
                     setError(e instanceof Error ? e.message : 'Server approval failed');
                     setState('error');
-                    throw e; // Let Pi SDK know approval failed
+                    throw e;
                 }
             },
             onReadyForServerCompletion: async (pid, txid) => {
                 setTxId(txid);
                 try {
-                    const bodyPayload: any = { paymentId: pid, txId: txid };
+                    const bodyPayload: Record<string, unknown> = { paymentId: pid, txId: txid };
                     if (paymentType === 'vouch_stake') {
                         bodyPayload.targetWallet = data.metadata?.target;
                     } else if (paymentType === 'dispute_filing') {
                         bodyPayload.defendant_wallet = data.metadata?.target;
                         bodyPayload.evidence_hash = data.metadata?.evidence;
+                    } else if (paymentType === 'merchant_registration') {
+                        const merchantData = data.metadata as MerchantRegistrationMetadata;
+                        bodyPayload.display_name = merchantData.display_name;
+                        bodyPayload.category = merchantData.category;
+                        bodyPayload.description = merchantData.description || '';
+                        bodyPayload.location = merchantData.location || '';
                     }
 
                     const res = await fetch(completeRoute, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${accessToken || ''}`
+                            Authorization: `Bearer ${accessToken || ''}`,
                         },
                         body: JSON.stringify(bodyPayload),
                     });
@@ -122,7 +142,7 @@ export function usePiPayment(accessToken?: string) {
                     console.error('[PiPayment] Completion error:', e);
                     setError(e instanceof Error ? e.message : 'Server completion failed');
                     setState('error');
-                    throw e; // Let Pi SDK know completion failed
+                    throw e;
                 }
             },
             onCancel: () => {

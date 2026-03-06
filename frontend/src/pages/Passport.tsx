@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { CSSProperties, MouseEvent } from 'react';
+import type { CSSProperties, FormEvent, MouseEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePassport } from '../hooks/usePassport';
 import { usePiPayment } from '../hooks/usePiPayment';
@@ -16,6 +16,8 @@ const TIER_MOTTOS: Record<string, string> = {
 };
 
 const SCORE_THRESHOLDS = [0, 250, 500, 700, 900];
+const MERCHANT_MIN_SCORE = 200;
+const MERCHANT_CATEGORIES = ['Retail', 'Food & Beverage', 'Services', 'Digital Goods', 'Education', 'Travel', 'Other'];
 
 function historyToneClass(impact?: 'positive' | 'neutral' | 'warning') {
     if (impact === 'positive') return 'trust-history__tone positive';
@@ -26,12 +28,19 @@ function historyToneClass(impact?: 'positive' | 'neutral' | 'warning') {
 export function Passport() {
     const { user, loading: authLoading, accessToken } = usePiAuth();
     const { passport, loading: passportLoading, refetch, error: passportError } = usePassport();
-    const { state: payState, error: payError, pay } = usePiPayment(accessToken || undefined);
+    const { state: payState, error: payError, pay, reset: resetPayment } = usePiPayment(accessToken || undefined);
     const navigate = useNavigate();
     const cardRef = useRef<HTMLDivElement>(null);
     const [tilt, setTilt] = useState({ x: 0, y: 0 });
     const [isFlipped, setIsFlipped] = useState(false);
     const [questing, setQuesting] = useState(false);
+    const [merchantForm, setMerchantForm] = useState({
+        display_name: '',
+        category: MERCHANT_CATEGORIES[0],
+        location: '',
+        description: '',
+    });
+    const [merchantFormError, setMerchantFormError] = useState<string | null>(null);
 
     useEffect(() => {
         const handleOrientation = (e: DeviceOrientationEvent) => {
@@ -58,6 +67,56 @@ export function Passport() {
     const handleMint = async () => {
         await pay(
             { amount: 1, memo: 'PiTrust Passport Mint', metadata: { type: 'passport_mint' } },
+            undefined,
+            async () => { await refetch(); }
+        );
+    };
+
+    const handleMerchantRegister = async (event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!passport) return;
+
+        const display_name = merchantForm.display_name.trim();
+        const category = merchantForm.category.trim();
+        const location = merchantForm.location.trim();
+        const description = merchantForm.description.trim();
+
+        if (!display_name || !category) {
+            setMerchantFormError('Display name and category are required.');
+            return;
+        }
+        if (description.length > 240) {
+            setMerchantFormError('Description must stay within 240 characters.');
+            return;
+        }
+        if (location.length > 100) {
+            setMerchantFormError('Location must stay within 100 characters.');
+            return;
+        }
+        if (passport.score < MERCHANT_MIN_SCORE) {
+            setMerchantFormError(`Merchant verification requires a trust score of at least ${MERCHANT_MIN_SCORE}.`);
+            return;
+        }
+        if (passport.score_frozen) {
+            setMerchantFormError('Merchant verification is unavailable while your score is frozen.');
+            return;
+        }
+
+        setMerchantFormError(null);
+        resetPayment();
+
+        await pay(
+            {
+                amount: 5,
+                memo: 'PiTrust Merchant Verification',
+                metadata: {
+                    type: 'merchant_registration',
+                    display_name,
+                    category,
+                    description,
+                    location,
+                },
+            },
             undefined,
             async () => { await refetch(); }
         );
@@ -201,6 +260,14 @@ export function Passport() {
             copy: `${passport.verified_social.length} verified social attestations currently linked to this passport.`,
         },
     ];
+
+    const merchantEligible = passport.score >= MERCHANT_MIN_SCORE && !passport.score_frozen;
+    const merchantPointsNeeded = Math.max(0, MERCHANT_MIN_SCORE - passport.score);
+    const merchantGateCopy = passport.score_frozen
+        ? 'Resolve the active dispute on your Passport before applying for merchant verification.'
+        : merchantPointsNeeded > 0
+            ? `You need ${merchantPointsNeeded} more trust points to unlock merchant verification.`
+            : 'Your Passport is eligible for merchant verification.';
 
     return (
         <div className="passport-page stagger">
@@ -486,6 +553,142 @@ export function Passport() {
                         </div>
                     </div>
 
+                    {passport.merchant_profile ? (
+                        <div className="passport-section-block animate-fade-up">
+                            <h2 className="section-title">Merchant trust profile</h2>
+                            <div className="merchant-profile frost-card">
+                                <div className="merchant-profile__top">
+                                    <div>
+                                        <p className="passport-summary__eyebrow">Merchant spotlight</p>
+                                        <h3 className="merchant-profile__title">{passport.merchant_profile.display_name}</h3>
+                                        <p className="merchant-profile__copy">{passport.merchant_profile.verification_copy}</p>
+                                    </div>
+                                    <span className={`badge ${passport.merchant_profile.badge ? 'badge-success' : 'badge-warning'}`}>
+                                        {passport.merchant_profile.badge ? 'Verified merchant' : 'Review status'}
+                                    </span>
+                                </div>
+                                <div className="merchant-profile__grid">
+                                    <div className="proof-item frost-card">
+                                        <span className="proof-item__label">Category</span>
+                                        <strong>{passport.merchant_profile.category}</strong>
+                                    </div>
+                                    <div className="proof-item frost-card">
+                                        <span className="proof-item__label">Location</span>
+                                        <strong>{passport.merchant_profile.location || 'Not listed'}</strong>
+                                    </div>
+                                    <div className="proof-item frost-card">
+                                        <span className="proof-item__label">Merchant trades</span>
+                                        <strong>{passport.merchant_profile.completed_trades} completed</strong>
+                                    </div>
+                                    <div className="proof-item frost-card">
+                                        <span className="proof-item__label">Merchant disputes</span>
+                                        <strong>{passport.merchant_profile.disputed_trades}</strong>
+                                    </div>
+                                </div>
+                                {passport.merchant_profile.description && (
+                                    <p className="merchant-profile__description">{passport.merchant_profile.description}</p>
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="passport-section-block animate-fade-up">
+                            <h2 className="section-title">Become a verified merchant</h2>
+                            <div className="merchant-onboarding frost-card">
+                                <div className="merchant-onboarding__top">
+                                    <div>
+                                        <p className="passport-summary__eyebrow">Merchant activation</p>
+                                        <h3 className="merchant-profile__title">Turn your Passport into a merchant trust card</h3>
+                                        <p className="merchant-profile__copy">
+                                            Register once to unlock a verified merchant badge, public merchant profile, and buyer-facing trust context before payment.
+                                        </p>
+                                    </div>
+                                    <div className={`merchant-onboarding__status ${merchantEligible ? 'eligible' : 'locked'}`}>
+                                        <strong>{merchantEligible ? 'Eligible now' : 'Not unlocked yet'}</strong>
+                                        <span>{merchantGateCopy}</span>
+                                    </div>
+                                </div>
+
+                                <div className="merchant-onboarding__requirements">
+                                    <div className="proof-item frost-card">
+                                        <span className="proof-item__label">Verification fee</span>
+                                        <strong>5 Pi</strong>
+                                    </div>
+                                    <div className="proof-item frost-card">
+                                        <span className="proof-item__label">Minimum score</span>
+                                        <strong>{MERCHANT_MIN_SCORE}+</strong>
+                                    </div>
+                                    <div className="proof-item frost-card">
+                                        <span className="proof-item__label">Current score</span>
+                                        <strong>{passport.score}</strong>
+                                    </div>
+                                    <div className="proof-item frost-card">
+                                        <span className="proof-item__label">Status</span>
+                                        <strong>{passport.score_frozen ? 'Frozen' : 'Ready for review'}</strong>
+                                    </div>
+                                </div>
+
+                                <form className="merchant-form" onSubmit={(event) => { void handleMerchantRegister(event); }}>
+                                    <div className="merchant-form__grid">
+                                        <label className="merchant-field">
+                                            <span>Display name</span>
+                                            <input
+                                                value={merchantForm.display_name}
+                                                onChange={(event) => setMerchantForm((current) => ({ ...current, display_name: event.target.value }))}
+                                                placeholder="How buyers should see your shop"
+                                                maxLength={100}
+                                            />
+                                        </label>
+                                        <label className="merchant-field">
+                                            <span>Category</span>
+                                            <select
+                                                value={merchantForm.category}
+                                                onChange={(event) => setMerchantForm((current) => ({ ...current, category: event.target.value }))}
+                                            >
+                                                {MERCHANT_CATEGORIES.map((category) => (
+                                                    <option key={category} value={category}>{category}</option>
+                                                ))}
+                                            </select>
+                                        </label>
+                                        <label className="merchant-field">
+                                            <span>Location</span>
+                                            <input
+                                                value={merchantForm.location}
+                                                onChange={(event) => setMerchantForm((current) => ({ ...current, location: event.target.value }))}
+                                                placeholder="City, region, or delivery zone"
+                                                maxLength={100}
+                                            />
+                                        </label>
+                                        <label className="merchant-field merchant-field--wide">
+                                            <span>Description</span>
+                                            <textarea
+                                                value={merchantForm.description}
+                                                onChange={(event) => setMerchantForm((current) => ({ ...current, description: event.target.value }))}
+                                                placeholder="What do you sell and why should buyers trust you?"
+                                                maxLength={240}
+                                                rows={4}
+                                            />
+                                        </label>
+                                    </div>
+
+                                    <div className="merchant-form__footer">
+                                        <p className="merchant-form__note">
+                                            Your merchant profile becomes part of your public trust card and is visible to buyers before they pay.
+                                        </p>
+                                        <div className="merchant-form__actions">
+                                            {merchantFormError && <div className="mint-error badge badge-danger">{merchantFormError}</div>}
+                                            {payError && <div className="mint-error badge badge-danger">{payError}</div>}
+                                            <button className="btn btn-gold" type="submit" disabled={!merchantEligible || payState === 'awaiting_approval' || payState === 'processing'}>
+                                                {payState === 'awaiting_approval' && 'Waiting for approval...'}
+                                                {payState === 'processing' && 'Activating merchant profile...'}
+                                                {(payState === 'idle' || payState === 'cancelled' || payState === 'error' || payState === 'completed') && 'Verify Merchant - 5 Pi'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="passport-section-block animate-fade-up">
                         <h2 className="section-title">Trust history</h2>
                         <div className="trust-history frost-card">
@@ -563,4 +766,10 @@ export function Passport() {
         </div>
     );
 }
+
+
+
+
+
+
 

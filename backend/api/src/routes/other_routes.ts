@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { CONTRACTS, invokeContract } from '../stellar/contracts';
 import { nativeToScVal, Address } from '@stellar/stellar-sdk';
 import { approvePayment, completePayment, getPayment } from '../services/payment';
+import { createHash } from 'crypto';
 
 export const vouchRouter = Router();
 
@@ -254,3 +255,6 @@ tradeRouter.get('/:id', async (req: Request, res: Response) => {
     if (!trade) { res.status(404).json({ error: 'Trade not found' }); return; }
     res.json(trade);
 });
+
+
+

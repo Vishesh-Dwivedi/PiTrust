@@ -9,6 +9,7 @@
 
 .public-passport-hero,
 .public-passport-card,
+.public-merchant-panel,
 .public-warning,
 .public-history,
 .public-trust-note,
@@ -172,6 +173,24 @@
     background: linear-gradient(145deg, rgba(240, 77, 93, 0.12), rgba(255, 255, 255, 0.03));
 }
 
+.public-merchant-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    background: linear-gradient(145deg, rgba(247, 183, 49, 0.09), rgba(255, 255, 255, 0.03));
+}
+
+.public-merchant-panel__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+}
+
+.public-merchant-panel__description {
+    color: var(--text-secondary);
+    line-height: 1.65;
+}
+
 .public-section {
     display: flex;
     flex-direction: column;
@@ -333,7 +352,8 @@
     .public-section--two-column,
     .public-breakdown-grid,
     .public-signal-grid,
-    .public-proof-list {
+    .public-proof-list,
+    .public-merchant-panel__grid {
         grid-template-columns: 1fr;
     }
 }
@@ -345,6 +365,7 @@
 
     .public-passport-hero,
     .public-passport-card,
+    .public-merchant-panel,
     .public-warning,
     .public-history,
     .public-trust-note,
@@ -363,3 +384,4 @@
         grid-template-columns: 1fr;
     }
 }
+

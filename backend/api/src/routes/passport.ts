@@ -58,7 +58,7 @@ passportRouter.get('/:wallet', async (req: Request, res: Response) => {
             return;
         }
 
-        const [redFlags, social, vouchStats, disputeStats, receivedVouches, givenVouches, disputes] = await Promise.all([
+        const [redFlags, social, vouchStats, disputeStats, receivedVouches, givenVouches, disputes, merchant] = await Promise.all([
             query<{
                 id: string;
                 flag_type: string;
@@ -116,6 +116,36 @@ passportRouter.get('/:wallet', async (req: Request, res: Response) => {
                  WHERE claimant_wallet = $1 OR defendant_wallet = $1
                  ORDER BY filed_at DESC
                  LIMIT 8`,
+                [walletAddress]
+            ),
+            queryOne<{
+                display_name: string | null;
+                category: string | null;
+                description: string | null;
+                location: string | null;
+                status: string;
+                suspension_count: number;
+                registered_at: string;
+                completed_count: string;
+                disputed_count: string;
+                total_count: string;
+            }>(
+                `SELECT m.display_name, m.category, m.description, m.location, m.status,
+                        m.suspension_count, m.registered_at,
+                        COALESCE(t.completed_count, 0) as completed_count,
+                        COALESCE(t.disputed_count, 0) as disputed_count,
+                        COALESCE(t.total_count, 0) as total_count
+                 FROM merchants m
+                 LEFT JOIN (
+                    SELECT seller_wallet,
+                           COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
+                           COUNT(*) FILTER (WHERE status IN ('disputed', 'filed')) as disputed_count,
+                           COUNT(*) as total_count
+                    FROM trades
+                    GROUP BY seller_wallet
+                 ) t ON t.seller_wallet = m.wallet_address
+                 WHERE m.wallet_address = $1
+                 LIMIT 1`,
                 [walletAddress]
             )
         ]);
@@ -403,5 +433,10 @@ passportRouter.post('/complete-mint', piAuthMiddleware, async (req: Request, res
         res.status(500).json({ error: 'Failed to complete passport mint' });
     }
 });
+
+
+
+
+
 
 

@@ -17,6 +17,7 @@ import { rateLimit } from 'express-rate-limit';
 import { Pool } from 'pg';
 import axios from 'axios';
 import { z } from 'zod';
+import { createHash } from 'crypto';
 import * as StellarSdk from 'stellar-sdk';
 
 // Database
@@ -424,7 +425,7 @@ app.get('/api/passport/:walletOrUid', async (req, res) => {
             return;
         }
 
-        const [redFlags, social, vouchStats, disputeStats, receivedVouches, givenVouches, disputes] = await Promise.all([
+        const [redFlags, social, vouchStats, disputeStats, receivedVouches, givenVouches, disputes, merchant] = await Promise.all([
             query<{
                 id: string;
                 flag_type: string;
@@ -483,6 +484,36 @@ app.get('/api/passport/:walletOrUid', async (req, res) => {
                  ORDER BY filed_at DESC
                  LIMIT 8`,
                 [passport.wallet_address]
+            ),
+            queryOne<{
+                display_name: string | null;
+                category: string | null;
+                description: string | null;
+                location: string | null;
+                status: string;
+                suspension_count: number;
+                registered_at: string;
+                completed_count: string;
+                disputed_count: string;
+                total_count: string;
+            }>(
+                `SELECT m.display_name, m.category, m.description, m.location, m.status,
+                        m.suspension_count, m.registered_at,
+                        COALESCE(t.completed_count, 0) as completed_count,
+                        COALESCE(t.disputed_count, 0) as disputed_count,
+                        COALESCE(t.total_count, 0) as total_count
+                 FROM merchants m
+                 LEFT JOIN (
+                    SELECT seller_wallet,
+                           COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
+                           COUNT(*) FILTER (WHERE status IN ('disputed', 'filed')) as disputed_count,
+                           COUNT(*) as total_count
+                    FROM trades
+                    GROUP BY seller_wallet
+                 ) t ON t.seller_wallet = m.wallet_address
+                 WHERE m.wallet_address = $1
+                 LIMIT 1`,
+                [passport.wallet_address]
             )
         ]);
 
@@ -495,6 +526,27 @@ app.get('/api/passport/:walletOrUid', async (req, res) => {
         const disputesResolved = parseInt(disputeStats?.resolved || '0', 10);
         const completedTrades = passport.completed_trades ?? 0;
         const disputedTrades = passport.disputed_trades ?? 0;
+        const merchantProfile = merchant
+            ? {
+                display_name: merchant.display_name || 'Pi Merchant',
+                category: merchant.category || 'General',
+                description: merchant.description,
+                location: merchant.location,
+                status: merchant.status,
+                suspension_count: merchant.suspension_count ?? 0,
+                registered_at: merchant.registered_at,
+                completed_trades: parseInt(merchant.completed_count || '0', 10),
+                disputed_trades: parseInt(merchant.disputed_count || '0', 10),
+                total_trades: parseInt(merchant.total_count || '0', 10),
+                badge: merchant.status === 'active' ? 'pitrust_verified' : null,
+                verification_headline: merchant.status === 'active'
+                    ? 'Verified merchant profile'
+                    : 'Merchant profile under review',
+                verification_copy: merchant.status === 'active'
+                    ? 'This wallet is listed as an active PiTrust merchant and can be inspected before you pay.'
+                    : 'Merchant registration exists, but the status is not currently active.',
+            }
+            : null;
 
         const pillarOnChain = Math.max(
             0,
@@ -559,6 +611,18 @@ app.get('/api/passport/:walletOrUid', async (req, res) => {
                     title: 'Passport minted',
                     detail: 'Trust Passport activated for this wallet.',
                     impact: 'positive',
+                }
+                : null,
+            merchantProfile
+                ? {
+                    id: `merchant-${passport.wallet_address}`,
+                    type: 'merchant_registered',
+                    occurred_at: merchantProfile.registered_at,
+                    title: merchantProfile.badge ? 'Merchant verified' : 'Merchant profile registered',
+                    detail: merchantProfile.badge
+                        ? `${merchantProfile.display_name} is active in the merchant registry.`
+                        : `${merchantProfile.display_name} appears in the merchant registry with a non-active status.`,
+                    impact: merchantProfile.badge ? 'positive' : 'warning',
                 }
                 : null,
             ...receivedVouches.map((item) => ({
@@ -642,6 +706,7 @@ app.get('/api/passport/:walletOrUid', async (req, res) => {
                 social_verified_count: socialVerifiedCount,
                 has_active_red_flags: redFlagCount > 0,
             },
+            merchant_profile: merchantProfile,
             stats: {
                 completed_trades: completedTrades,
                 disputed_trades: disputedTrades,
@@ -663,7 +728,6 @@ app.get('/api/passport/:walletOrUid', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch passport' });
     }
 });
-
 // POST /api/passport/approve-mint
 const ApproveMintSchema = z.object({ paymentId: z.string().min(10) });
 
@@ -1108,6 +1172,15 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 });
 
 export default app;
+
+
+
+
+
+
+
+
+
 
 
 

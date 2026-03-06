@@ -178,8 +178,8 @@ export function PublicPassport() {
                     <section className="public-passport-card frost-card">
                         <div className="public-passport-card__top">
                             <div>
-                                <p className="public-passport-card__eyebrow">Public trust card</p>
-                                <h2>{passport.trust_summary.headline}</h2>
+                                <p className="public-passport-card__eyebrow">{passport.merchant_profile ? 'Merchant trust card' : 'Public trust card'}</p>
+                                <h2>{passport.merchant_profile ? passport.merchant_profile.display_name : passport.trust_summary.headline}</h2>
                                 <p className="public-passport-card__copy">{passport.trust_summary.subline}</p>
                             </div>
                             <button className="btn btn-primary" onClick={handleShare}>Share Link</button>
@@ -197,6 +197,12 @@ export function PublicPassport() {
                                     <span className="public-passport-card__meta-label">Tier</span>
                                     <strong>{tierLabel(passport.tier)}</strong>
                                 </div>
+                                {passport.merchant_profile && (
+                                    <div>
+                                        <span className="public-passport-card__meta-label">Merchant badge</span>
+                                        <strong>{passport.merchant_profile.badge ? 'PiTrust Verified' : 'Registered merchant'}</strong>
+                                    </div>
+                                )}
                                 <div>
                                     <span className="public-passport-card__meta-label">Wallet</span>
                                     <strong>{formatWallet(passport.wallet_address)}</strong>
@@ -212,6 +218,37 @@ export function PublicPassport() {
                             </div>
                         </div>
                     </section>
+
+                    {passport.merchant_profile && (
+                        <section className="public-merchant-panel frost-card">
+                            <div className="public-section__header">
+                                <p className="public-section__eyebrow">Merchant profile</p>
+                                <h2>{passport.merchant_profile.verification_headline}</h2>
+                            </div>
+                            <p className="public-passport-card__copy">{passport.merchant_profile.verification_copy}</p>
+                            <div className="public-merchant-panel__grid">
+                                <div className="public-proof-item frost-card">
+                                    <span>Category</span>
+                                    <strong>{passport.merchant_profile.category}</strong>
+                                </div>
+                                <div className="public-proof-item frost-card">
+                                    <span>Location</span>
+                                    <strong>{passport.merchant_profile.location || 'Not listed'}</strong>
+                                </div>
+                                <div className="public-proof-item frost-card">
+                                    <span>Merchant trades</span>
+                                    <strong>{passport.merchant_profile.completed_trades} completed</strong>
+                                </div>
+                                <div className="public-proof-item frost-card">
+                                    <span>Merchant disputes</span>
+                                    <strong>{passport.merchant_profile.disputed_trades}</strong>
+                                </div>
+                            </div>
+                            {passport.merchant_profile.description && (
+                                <p className="public-merchant-panel__description">{passport.merchant_profile.description}</p>
+                            )}
+                        </section>
+                    )}
 
                     {passport.red_flags.length > 0 && (
                         <section className="public-warning frost-card">
@@ -343,4 +380,5 @@ export function PublicPassport() {
         </div>
     );
 }
+
 

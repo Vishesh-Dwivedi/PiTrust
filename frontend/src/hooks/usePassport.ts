@@ -71,6 +71,22 @@ export interface PassportStats {
     total_given_stake_pi: number;
 }
 
+export interface MerchantProfile {
+    display_name: string;
+    category: string;
+    description?: string | null;
+    location?: string | null;
+    status: string;
+    suspension_count: number;
+    registered_at: string;
+    completed_trades: number;
+    disputed_trades: number;
+    total_trades: number;
+    badge: string | null;
+    verification_headline: string;
+    verification_copy: string;
+}
+
 export interface PassportData {
     wallet_address: string;
     pi_uid: string;
@@ -90,6 +106,7 @@ export interface PassportData {
     trust_summary: TrustSummary;
     score_breakdown: ScoreBreakdown;
     verification_flags: VerificationFlags;
+    merchant_profile: MerchantProfile | null;
     stats: PassportStats;
     history: PassportHistoryEvent[];
     history_count: number;
@@ -141,6 +158,7 @@ const DEV_MOCK_PASSPORT: PassportData = {
         social_verified_count: 1,
         has_active_red_flags: false,
     },
+    merchant_profile: null,
     stats: {
         completed_trades: 4,
         disputed_trades: 0,
@@ -220,6 +238,7 @@ export function buildUnmintedPassport(
             social_verified_count: 0,
             has_active_red_flags: false,
         },
+        merchant_profile: null,
         stats: {
             completed_trades: 0,
             disputed_trades: 0,
@@ -253,6 +272,23 @@ export function normalizePassportData(
     const verifiedSocial = data.verified_social ?? [];
     const vouchesReceived = data.vouches_received ?? data.stats?.vouches_received ?? 0;
     const vouchesGiven = data.vouches_given ?? data.stats?.vouches_given ?? 0;
+    const merchantProfile = data.merchant_profile
+        ? {
+            display_name: data.merchant_profile.display_name || 'Pi Merchant',
+            category: data.merchant_profile.category || 'General',
+            description: data.merchant_profile.description ?? null,
+            location: data.merchant_profile.location ?? null,
+            status: data.merchant_profile.status || 'active',
+            suspension_count: data.merchant_profile.suspension_count ?? 0,
+            registered_at: data.merchant_profile.registered_at,
+            completed_trades: data.merchant_profile.completed_trades ?? 0,
+            disputed_trades: data.merchant_profile.disputed_trades ?? 0,
+            total_trades: data.merchant_profile.total_trades ?? 0,
+            badge: data.merchant_profile.badge ?? null,
+            verification_headline: data.merchant_profile.verification_headline || 'Merchant profile registered',
+            verification_copy: data.merchant_profile.verification_copy || 'Merchant metadata is attached to this passport.',
+        }
+        : null;
 
     return {
         wallet_address: data.wallet_address || walletOrUid,
@@ -291,6 +327,7 @@ export function normalizePassportData(
             social_verified_count: data.verification_flags?.social_verified_count ?? verifiedSocial.length,
             has_active_red_flags: data.verification_flags?.has_active_red_flags ?? redFlags.length > 0,
         },
+        merchant_profile: merchantProfile,
         stats: {
             completed_trades: data.stats?.completed_trades ?? data.completed_trades ?? 0,
             disputed_trades: data.stats?.disputed_trades ?? data.disputed_trades ?? 0,
