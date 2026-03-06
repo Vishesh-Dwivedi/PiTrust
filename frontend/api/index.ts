@@ -57,7 +57,7 @@ const piHeaders = () => ({
 });
 
 // Pi App Wallet Configuration
-const PI_APP_WALLET_ADDRESS = process.env.PI_APP_WALLET_ADDRESS || '';
+export const PI_APP_WALLET_ADDRESS = process.env.PI_APP_WALLET_ADDRESS || '';
 const PI_APP_WALLET_PRIVATE_SEED = process.env.PI_APP_WALLET_PRIVATE_SEED || '';
 
 // Connect to the Pi Horizon Node
@@ -67,7 +67,7 @@ const horizonServer = new StellarSdk.Horizon.Server('https://api.testnet.minepi.
 /**
  * Orchestrates an automated App-to-User (A2U) payout.
  */
-async function sendPiToUser(targetUserUid: string, targetWalletFormat: string, amount: number, memo: string) {
+export async function sendPiToUser(targetUserUid: string, targetWalletFormat: string, amount: number, memo: string) {
     if (!PI_APP_WALLET_PRIVATE_SEED) {
         throw new Error('Server wallet seed missing. Cannot process A2U payouts.');
     }
@@ -1215,7 +1215,7 @@ app.post('/api/quests/complete', piAuthMiddleware, writeLimiter, async (req, res
 });
 
 // Security Headers Middleware
-app.use((req, res, next) => {
+app.use((_req, res, next) => {
     res.setHeader('X-Frame-Options', 'ALLOWALL');
     res.setHeader('Content-Security-Policy', "frame-ancestors *");
     // Disable caching for api responses
@@ -1224,11 +1224,11 @@ app.use((req, res, next) => {
 });
 
 // Root / Health / Validation
-app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
-app.get('/api', (req, res) => res.json({ message: 'PiTrust API v1 Running on Vercel' }));
+app.get('/api/health', (_req, res) => res.json({ status: 'ok', time: new Date() }));
+app.get('/api', (_req, res) => res.json({ message: 'PiTrust API v1 Running on Vercel' }));
 
 // Bulletproof fallback for Pi Developer validation bot
-app.get('/validation-key.txt', (req, res) => {
+app.get('/validation-key.txt', (_req, res) => {
     res.set('Content-Type', 'text/plain; charset=utf-8');
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.set('Pragma', 'no-cache');
