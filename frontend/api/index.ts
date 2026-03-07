@@ -131,13 +131,16 @@ async function approvePayment(paymentId: string) {
         return response.data;
     } catch (err: any) {
         if (err.response?.status === 404 && PI_API_BASE !== PI_API_BASE_TESTNET) {
-            console.warn(`[Pi API] Mainnet 404 for approve ${paymentId}, falling back to Testnet...`);
+            console.warn(`[Pi API] Mainnet 404 for approve ${paymentId} (Base: ${PI_API_BASE}), falling back to Testnet...`);
             const fallbackResponse = await axios.post(
                 `${PI_API_BASE_TESTNET}/v2/payments/${paymentId}/approve`,
                 {},
                 { headers: piHeaders(), timeout: 10_000 }
             );
             return fallbackResponse.data;
+        }
+        if (err.response?.status === 404) {
+            console.error(`[Pi API] 404 Not Found for ${paymentId} at ${PI_API_BASE === PI_API_BASE_TESTNET ? 'Testnet' : 'Mainnet'}`);
         }
         throw err;
     }
@@ -1273,7 +1276,7 @@ app.get('/validation-key.txt', (_req, res) => {
     res.set('Pragma', 'no-cache');
     res.set('Expires', '0');
     res.set('Surrogate-Control', 'no-store');
-    res.send('4bcb87b8aa6d5f864e36edcefa323ef25130ad02432f0b1607e47bcd2fa65846b3a622367c321571252c91fa4bf175c4271618e73a3cb24e48ea3ddebedb2e00');
+    res.send('403ac4481d2a9c1e94235c5962cd3cdbebca79365ab34e3f138874e929174f67738a76e5784b5c64bc964040480999f5eab9a79a5f45e9859476f46dfb1fc1b6');
 });
 
 // Merchant Routes
